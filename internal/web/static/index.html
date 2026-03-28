@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nmpcc</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['DM Sans', 'system-ui', 'sans-serif'],
+            serif: ['Instrument Serif', 'Georgia', 'serif'],
+          },
+          colors: {
+            surface: {
+              0: 'var(--surface-0)',
+              1: 'var(--surface-1)',
+              2: 'var(--surface-2)',
+              3: 'var(--surface-3)',
+            },
+            border: {
+              DEFAULT: 'var(--border)',
+              subtle: 'var(--border-subtle)',
+            },
+            fg: {
+              DEFAULT: 'var(--fg)',
+              muted: 'var(--fg-muted)',
+              faint: 'var(--fg-faint)',
+            },
+            accent: {
+              DEFAULT: 'var(--accent)',
+              soft: 'var(--accent-soft)',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --surface-0: #faf9f7;
+      --surface-1: #f2f0ed;
+      --surface-2: #e8e6e1;
+      --surface-3: #dedad4;
+      --border: #d4d1cb;
+      --border-subtle: #e8e6e1;
+      --fg: #1a1816;
+      --fg-muted: #6b6560;
+      --fg-faint: #9e9890;
+      --accent: #c05621;
+      --accent-soft: #fdf2e9;
+    }
+
+    html.dark {
+      --surface-0: #0c0b0a;
+      --surface-1: #161514;
+      --surface-2: #1e1d1b;
+      --surface-3: #262523;
+      --border: #2a2826;
+      --border-subtle: #1e1d1b;
+      --fg: #e8e6e1;
+      --fg-muted: #9e9890;
+      --fg-faint: #6b6560;
+      --accent: #e8773a;
+      --accent-soft: #1f1510;
+    }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--surface-0);
+      color: var(--fg);
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .fade-in { animation: fadeIn 0.2s ease-out; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .spin { animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .stagger > * { animation: fadeIn 0.25s ease-out backwards; }
+    .stagger > *:nth-child(1) { animation-delay: 0.02s; }
+    .stagger > *:nth-child(2) { animation-delay: 0.06s; }
+    .stagger > *:nth-child(3) { animation-delay: 0.10s; }
+    .stagger > *:nth-child(4) { animation-delay: 0.14s; }
+    .stagger > *:nth-child(5) { animation-delay: 0.18s; }
+    .stagger > *:nth-child(6) { animation-delay: 0.22s; }
+    .stagger > *:nth-child(7) { animation-delay: 0.26s; }
+    .stagger > *:nth-child(8) { animation-delay: 0.30s; }
+
+    .card-lift { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .card-lift:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    html.dark .card-lift:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--fg-faint); }
+
+    .modal-backdrop {
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+    * { transition-property: background-color, border-color; transition-duration: 0.15s; }
+    a, button, span, p, h1, h2, h3, td, th, svg { transition-duration: 0s !important; }
+
+    /* Progress ring for stat cards */
+    .progress-ring { transform: rotate(-90deg); }
+    .progress-ring circle {
+      transition: stroke-dashoffset 0.5s ease;
+    }
+
+    /* Sidebar collapse on mobile */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .sidebar.open { display: flex; position: fixed; z-index: 40; inset: 0; width: 100%; background: var(--surface-0); }
+      .mobile-menu-btn { display: flex !important; }
+    }
+
+    /* Table row highlight */
+    .table-row-hover:hover { background: var(--surface-1); }
+
+    /* Tooltip */
+    .tooltip-wrap { position: relative; }
+    .tooltip-wrap .tooltip {
+      display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+      background: var(--fg); color: var(--surface-0); font-size: 10px; padding: 4px 8px;
+      border-radius: 6px; white-space: nowrap; z-index: 50; pointer-events: none;
+    }
+    .tooltip-wrap:hover .tooltip { display: block; }
+
+    /* Smooth page transitions */
+    .page-enter { animation: pageEnter 0.2s ease-out; }
+    @keyframes pageEnter {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Sonnet usage bar gradient */
+    .usage-bar-gradient {
+      background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444);
+      background-size: 300% 100%;
+    }
+  </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+  <!-- Top Bar -->
+  <header class="h-12 border-b border-border flex items-center justify-between px-4 shrink-0 bg-surface-0">
+    <div class="flex items-center gap-3">
+      <!-- Mobile menu button -->
+      <button onclick="toggleSidebar()" class="mobile-menu-btn hidden w-7 h-7 rounded-lg border border-border-subtle items-center justify-center text-fg-faint hover:text-fg">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <div class="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-[11px] font-bold text-white tracking-tight shadow-sm">N</div>
+      <div class="flex items-baseline gap-1.5">
+        <span class="text-[14px] font-semibold tracking-tight">nmpcc</span>
+        <span class="text-[10px] text-fg-faint font-medium tracking-wide uppercase">proxy</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2.5">
+      <!-- Auto-refresh indicator -->
+<input id="apiKeyInput" type="password" placeholder="API Key"
+        class="w-36 text-[11px] bg-surface-1 border border-border-subtle rounded-lg px-2.5 py-1.5 text-fg-muted
+               focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/10 placeholder-fg-faint transition-all">
+      <button onclick="toggleTheme()" title="Toggle theme"
+        class="w-7 h-7 rounded-lg border border-border-subtle flex items-center justify-center text-fg-faint hover:text-fg hover:border-border transition-colors">
+        <svg id="themeIconSun" class="w-3.5 h-3.5 hidden" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+        <svg id="themeIconMoon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+      </button>
+      <button onclick="loadAll()" title="Refresh"
+        class="w-7 h-7 rounded-lg border border-border-subtle flex items-center justify-center text-fg-faint hover:text-fg hover:border-border transition-colors">
+        <svg id="refreshIcon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4.93 9a9 9 0 0115.04-1.36L20 9M19.07 15a9 9 0 01-15.04 1.36L4 15"/>
+        </svg>
+      </button>
+      <div id="connDot" class="w-2 h-2 rounded-full bg-fg-faint/40" title="Connection status"></div>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar w-52 border-r border-border flex flex-col shrink-0 bg-surface-0">
+      <nav class="flex-1 py-3 px-2.5 space-y-0.5">
+        <button onclick="navigate('overview')" data-nav="overview"
+          class="nav-item w-full text-left px-3 py-2 rounded-lg text-[12px] flex items-center gap-2.5 transition-colors font-medium">
+          <svg class="w-4 h-4 shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 12a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1v-7z"/>
+          </svg>
+          Overview
+        </button>
+        <button onclick="navigate('accounts')" data-nav="accounts"
+          class="nav-item w-full text-left px-3 py-2 rounded-lg text-[12px] flex items-center gap-2.5 transition-colors font-medium">
+          <svg class="w-4 h-4 shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          Accounts
+          <span id="accountsBadge" class="ml-auto text-[10px] bg-surface-2 text-fg-faint px-1.5 py-0.5 rounded-md font-semibold tabular-nums"></span>
+        </button>
+        <button onclick="navigate('logs')" data-nav="logs"
+          class="nav-item w-full text-left px-3 py-2 rounded-lg text-[12px] flex items-center gap-2.5 transition-colors font-medium">
+          <svg class="w-4 h-4 shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+          </svg>
+          Logs
+        </button>
+        <button onclick="navigate('settings')" data-nav="settings"
+          class="nav-item w-full text-left px-3 py-2 rounded-lg text-[12px] flex items-center gap-2.5 transition-colors font-medium">
+          <svg class="w-4 h-4 shrink-0 opacity-60" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          Settings
+        </button>
+      </nav>
+      <!-- Sidebar footer with uptime -->
+      <div class="border-t border-border px-3 py-2.5">
+        <div class="flex items-center justify-between">
+          <p class="text-[10px] text-fg-faint tracking-wide uppercase">Claude CLI Proxy</p>
+          <span id="sidebarUptime" class="text-[10px] text-fg-faint tabular-nums"></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Content -->
+    <main id="content" class="flex-1 overflow-y-auto bg-surface-0">
+    </main>
+  </div>
+
+  <!-- Add Account Modal -->
+  <div id="loginModal" class="fixed inset-0 bg-black/30 dark:bg-black/50 modal-backdrop flex items-center justify-center z-50 hidden"
+       onclick="if(event.target===this)closeLoginModal()">
+    <div class="bg-surface-0 border border-border rounded-2xl w-full max-w-md mx-4 shadow-xl">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-border">
+        <h3 class="text-[13px] font-semibold">Add Account</h3>
+        <button onclick="closeLoginModal()" class="text-fg-faint hover:text-fg transition-colors p-1 -mr-1 rounded-md hover:bg-surface-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="px-5 py-4 space-y-3">
+        <div class="text-[12px] text-fg-muted leading-relaxed">Run the following command on the server to add an account:</div>
+        <div class="bg-surface-1 border border-border-subtle rounded-lg p-3 font-mono text-[11px] text-fg select-all leading-relaxed">CLAUDE_CONFIG_DIR=/accounts/<span class="text-accent">NAME</span> claude auth login</div>
+        <div class="text-[11px] text-fg-faint leading-relaxed">Replace <span class="font-mono text-accent">NAME</span> with the account name. The account will be auto-discovered after login.</div>
+        <button onclick="closeLoginModal();loadAll()"
+          class="w-full text-[12px] border border-border text-fg-muted hover:text-fg
+                 py-2 rounded-lg transition-colors font-medium hover:bg-surface-1">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Detail Modal -->
+  <div id="detailModal" class="fixed inset-0 bg-black/30 dark:bg-black/50 modal-backdrop flex items-center justify-center z-50 hidden"
+       onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="bg-surface-0 border border-border rounded-2xl w-full max-w-md mx-4 shadow-xl max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
+        <h3 id="detailTitle" class="text-[13px] font-semibold">Account</h3>
+        <button onclick="document.getElementById('detailModal').classList.add('hidden')"
+          class="text-fg-faint hover:text-fg transition-colors p-1 -mr-1 rounded-md hover:bg-surface-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div id="detailBody" class="px-5 py-4 text-[12px] space-y-2 overflow-y-auto"></div>
+    </div>
+  </div>
+
+<script>
+// ── Theme ──
+const savedTheme = localStorage.getItem('nmpcc_theme') || 'light';
+applyTheme(savedTheme);
+
+function applyTheme(theme) {
+  if (theme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+  const sun = document.getElementById('themeIconSun');
+  const moon = document.getElementById('themeIconMoon');
+  if (sun && moon) {
+    sun.classList.toggle('hidden', theme !== 'dark');
+    moon.classList.toggle('hidden', theme === 'dark');
+  }
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.classList.contains('dark');
+  const next = isDark ? 'light' : 'dark';
+  localStorage.setItem('nmpcc_theme', next);
+  applyTheme(next);
+}
+
+// ── Mobile sidebar ──
+function toggleSidebar() {
+  document.querySelector('.sidebar').classList.toggle('open');
+}
+
+// ── State ──
+let apiKey = localStorage.getItem('nmpcc_api_key') || '';
+let currentPage = 'overview';
+let cachedDashboard = null;
+let cachedAccounts = [];
+let lastRefreshTime = 0;
+
+const $apiKey = document.getElementById('apiKeyInput');
+$apiKey.value = apiKey;
+$apiKey.addEventListener('change', () => {
+  apiKey = $apiKey.value;
+  localStorage.setItem('nmpcc_api_key', apiKey);
+  loadAll();
+});
+
+// ── API ──
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (apiKey) opts.headers['Authorization'] = 'Bearer ' + apiKey;
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  return res.json();
+}
+
+// ── Data loading ──
+async function loadAll(silent) {
+  const icon = document.getElementById('refreshIcon');
+  if (!silent) icon.classList.add('spin');
+  try {
+    const [dash, status] = await Promise.all([
+      api('GET', '/api/dashboard'),
+      api('GET', '/status'),
+    ]);
+    cachedDashboard = dash.error ? null : dash;
+    cachedAccounts = status.accounts || [];
+    lastRefreshTime = Date.now();
+    document.getElementById('connDot').className = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot';
+    // Update sidebar badge
+    const badge = document.getElementById('accountsBadge');
+    if (badge) badge.textContent = cachedAccounts.length;
+    // Update sidebar uptime
+    updateSidebarUptime();
+  } catch {
+    document.getElementById('connDot').className = 'w-2 h-2 rounded-full bg-red-500';
+  }
+  if (!silent) icon.classList.remove('spin');
+  render();
+}
+
+function updateSidebarUptime() {
+  const $el = document.getElementById('sidebarUptime');
+  if ($el && cachedDashboard) {
+    $el.textContent = formatUptime(cachedDashboard.uptime_seconds);
+  }
+}
+
+// ── Navigation ──
+function navigate(page) {
+  currentPage = page;
+  // Close mobile sidebar
+  document.querySelector('.sidebar')?.classList.remove('open');
+  render();
+}
+
+function render() {
+  document.querySelectorAll('.nav-item').forEach(el => {
+    const isActive = el.dataset.nav === currentPage;
+    el.className = `nav-item w-full text-left px-3 py-2 rounded-lg text-[12px] flex items-center gap-2.5 transition-colors font-medium ${
+      isActive ? 'bg-surface-2 text-fg' : 'text-fg-muted hover:text-fg hover:bg-surface-1'
+    }`;
+  });
+
+  const $content = document.getElementById('content');
+  if (currentPage === 'overview') renderOverview($content);
+  else if (currentPage === 'accounts') renderAccounts($content);
+  else if (currentPage === 'logs') renderLogs($content);
+  else if (currentPage === 'settings') renderSettings($content);
+}
+
+// ── Overview Page ──
+function usageBar(pct, compact) {
+  var color = pct > 80 ? 'bg-red-500' : pct > 50 ? 'bg-amber-500' : 'bg-emerald-500';
+  var textColor = pct > 80 ? 'text-red-600 dark:text-red-400' : pct > 50 ? 'text-amber-600 dark:text-amber-400' : 'text-fg';
+  var w = compact ? 'w-12' : 'w-16';
+  var h = compact ? 'h-1' : 'h-1.5';
+  return '<div class="flex items-center gap-2">'
+    + '<div class="' + w + ' bg-surface-2 rounded-full ' + h + '"><div class="' + color + ' ' + h + ' rounded-full transition-all duration-500" style="width:' + Math.min(pct, 100) + '%"></div></div>'
+    + '<span class="' + textColor + ' tabular-nums font-semibold text-[11px]">' + pct + '%</span>'
+    + '</div>';
+}
+
+function overviewTableRow(acc) {
+  var pu = acc.planUsage;
+  var fiveHourCell = '<span class="text-fg-faint">--</span>';
+  var weeklyCell = '<span class="text-fg-faint">--</span>';
+  if (pu && pu.updatedAt) {
+    fiveHourCell = usageBar(pu.sessionUsed);
+    weeklyCell = usageBar(pu.weeklyUsed);
+  }
+  // 5h reset time: prefer rateLimit.resetsAt, fallback to planUsage.sessionResets
+  var rl = acc.rateLimit;
+  var resetInfo = '';
+  if (rl && rl.resetsAt) {
+    resetInfo = '<div class="text-[10px] text-fg-faint mt-0.5 tabular-nums">' + formatResetTime(rl.resetsAt) + ' (' + new Date(rl.resetsAt * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + ')</div>';
+  } else if (pu && pu.sessionResets) {
+    resetInfo = '<div class="text-[10px] text-fg-faint mt-0.5 tabular-nums">' + esc(pu.sessionResets) + '</div>';
+  }
+  // Weekly reset time from planUsage
+  var weeklyResetInfo = '';
+  if (pu && pu.weeklyResets) {
+    weeklyResetInfo = '<div class="text-[10px] text-fg-faint mt-0.5 tabular-nums">' + esc(pu.weeklyResets) + '</div>';
+  }
+  var dotClass = acc.healthy ? 'bg-emerald-500' : 'bg-red-500';
+  if (acc.healthy && acc.active === 0) dotClass += ' pulse-dot';
+  var textClass = acc.healthy ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+  var statusText = acc.healthy ? (acc.active > 0 ? acc.active + ' active' : 'Idle') : 'Down';
+
+  // Rate limit badge
+  var rlBadge = '';
+  if (acc.rateLimit && acc.rateLimit.status === 'limited') {
+    rlBadge = '<span class="ml-1 text-[10px] text-red-500 bg-red-50 dark:bg-red-950/30 px-1 py-0.5 rounded font-medium">LIMITED</span>';
+  }
+
+  return '<tr class="border-b border-border-subtle last:border-0 table-row-hover transition-colors cursor-pointer" onclick="showAccountDetail(\'' + esc(acc.name) + '\')">'
+    + '<td class="px-4 py-2.5"><div class="flex items-center gap-2.5">'
+    + '<div class="w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold tracking-tight shrink-0" style="background:hsl(' + (hashCode(acc.name) % 360) + ',40%,92%);color:hsl(' + (hashCode(acc.name) % 360) + ',50%,35%)">' + acc.name.slice(0, 2).toUpperCase() + '</div>'
+    + '<span class="font-semibold text-fg">' + esc(acc.name) + '</span></div></td>'
+    + '<td class="px-4 py-2.5"><span class="inline-flex items-center gap-1.5">'
+    + '<span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>'
+    + '<span class="font-medium ' + textClass + '">' + statusText + '</span>' + rlBadge
+    + '</span></td>'
+    + '<td class="px-4 py-2.5">' + fiveHourCell + resetInfo + '</td>'
+    + '<td class="px-4 py-2.5">' + weeklyCell + weeklyResetInfo + '</td>'
+    + '<td class="px-4 py-2.5 text-right text-fg-muted tabular-nums font-medium text-[11px]">' + (acc.usage ? '$' + acc.usage.totalCostUsd.toFixed(4) : '--') + '</td>'
+    + '<td class="px-4 py-2.5 text-right tabular-nums font-medium text-[11px]">' + acc.requestCount + '</td>'
+    + '</tr>';
+}
+
+function renderOverview($el) {
+  var d = cachedDashboard;
+  var healthPct = d && d.total_accounts > 0 ? Math.round((d.healthy_accounts / d.total_accounts) * 100) : 0;
+  var healthyVal = d ? d.healthy_accounts + '<span class="text-fg-faint font-normal text-[14px] tabular-nums">/' + d.total_accounts + '</span>' : '--';
+  var healthColor = healthPct >= 80 ? 'emerald' : healthPct >= 50 ? 'amber' : 'red';
+
+  // Compute totals across all accounts
+  var totalCost = 0;
+  var totalActive = 0;
+  cachedAccounts.forEach(function(a) {
+    if (a.usage) totalCost += a.usage.totalCostUsd;
+    totalActive += a.active || 0;
+  });
+
+  var tableRows = cachedAccounts.map(overviewTableRow).join('');
+  var tableHtml = cachedAccounts.length === 0
+    ? '<div class="border-2 border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">'
+      + '<div class="w-10 h-10 rounded-xl bg-surface-1 border border-border flex items-center justify-center text-fg-faint">'
+      + '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>'
+      + '</div>'
+      + '<p class="text-[12px] text-fg-muted font-medium">No accounts yet</p>'
+      + '<button onclick="navigate(\'accounts\');openLoginModal()" class="text-[12px] text-accent hover:underline underline-offset-2 font-medium">Add your first account</button>'
+      + '</div>'
+    : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0">'
+      + '<table class="w-full text-[11px]">'
+      + '<thead><tr class="border-b border-border text-fg-faint bg-surface-1">'
+      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Account</th>'
+      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Status</th>'
+      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">5h</th>'
+      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Weekly</th>'
+      + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Cost</th>'
+      + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Reqs</th>'
+      + '</tr></thead>'
+      + '<tbody class="stagger">' + tableRows + '</tbody>'
+      + '</table></div>';
+
+  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-5xl page-enter">'
+    + '<div class="mb-6">'
+    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Overview</h1>'
+    + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">Service status and metrics'
+    + (lastRefreshTime ? ' <span class="text-fg-faint/60">&middot; updated ' + timeAgo(lastRefreshTime) + '</span>' : '')
+    + '</p>'
+    + '</div>'
+    + '<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 stagger mb-6">'
+    + statCard('Uptime', d ? formatUptime(d.uptime_seconds) : '--', upArrowIcon())
+    + statCard('Requests', d ? d.total_requests.toLocaleString() : '--', chartIcon())
+    + statCard('Healthy', healthyVal, heartIcon(), healthColor)
+    + statCard('Active', totalActive, boltIcon())
+    + statCard('Cost', totalCost > 0 ? '$' + totalCost.toFixed(2) : '--', dollarIcon())
+    + '</div>'
+    + '<div>'
+    + '<div class="flex items-center justify-between mb-3">'
+    + '<h2 class="text-[12px] font-semibold text-fg-muted uppercase tracking-wider">Accounts</h2>'
+    + '<div class="flex items-center gap-3">'
+    + '<span class="text-[11px] text-fg-faint tabular-nums">' + cachedAccounts.length + ' total</span>'
+    + '<button onclick="navigate(\'accounts\');openLoginModal()" class="text-[11px] text-accent hover:underline underline-offset-2 font-medium">+ Add</button>'
+    + '</div>'
+    + '</div>'
+    + tableHtml
+    + '</div></div>';
+}
+
+function statCard(label, value, icon, accentColor) {
+  const ring = accentColor
+    ? `border-${accentColor}-200 dark:border-${accentColor}-900/40`
+    : 'border-border';
+  return `
+    <div class="bg-surface-1 border ${ring} rounded-xl px-4 py-3.5 card-lift">
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-[10px] text-fg-faint uppercase tracking-wider font-semibold">${label}</p>
+        <span class="text-fg-faint/50">${icon}</span>
+      </div>
+      <p class="text-[20px] font-semibold tabular-nums tracking-tight leading-none">${value}</p>
+    </div>`;
+}
+
+function upArrowIcon() {
+  return '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v8m0-8l-3 3m3-3l3 3"/><circle cx="12" cy="12" r="10"/></svg>';
+}
+function chartIcon() {
+  return '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18M7 16l4-4 4 4 6-6"/></svg>';
+}
+function heartIcon() {
+  return '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"/></svg>';
+}
+function boltIcon() {
+  return '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>';
+}
+function dollarIcon() {
+  return '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>';
+}
+
+function formatUptime(s) {
+  if (typeof s !== 'number') return '--';
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${s % 60}s`;
+}
+
+function timeAgo(ts) {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 5) return 'just now';
+  if (diff < 60) return diff + 's ago';
+  return Math.floor(diff / 60) + 'm ago';
+}
+
+// ── Accounts Page ──
+function renderAccounts($el) {
+  // Separate healthy/unhealthy for visual grouping
+  var healthyAccs = cachedAccounts.filter(function(a) { return a.healthy; });
+  var unhealthyAccs = cachedAccounts.filter(function(a) { return !a.healthy; });
+
+  var accountsHtml = '';
+  if (cachedAccounts.length === 0) {
+    accountsHtml = '<div class="border-2 border-dashed border-border rounded-2xl py-16 flex flex-col items-center gap-3">'
+      + '<div class="w-10 h-10 rounded-xl bg-surface-1 border border-border flex items-center justify-center text-fg-faint">'
+      + '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>'
+      + '</div>'
+      + '<p class="text-[13px] text-fg-muted font-medium">No accounts configured</p>'
+      + '<button onclick="openLoginModal()" class="text-[12px] text-accent hover:underline underline-offset-2 font-medium">Add your first account</button>'
+      + '</div>';
+  } else {
+    accountsHtml = '<div class="space-y-2 stagger">' + healthyAccs.map(accountCard).join('') + '</div>';
+    if (unhealthyAccs.length > 0) {
+      accountsHtml += '<div class="mt-4"><p class="text-[10px] text-red-500 uppercase tracking-wider font-semibold mb-2">Unhealthy</p>'
+        + '<div class="space-y-2">' + unhealthyAccs.map(accountCard).join('') + '</div></div>';
+    }
+  }
+
+  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-4xl page-enter">'
+    + '<div class="flex items-center justify-between mb-6">'
+    + '<div>'
+    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Accounts</h1>'
+    + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">' + cachedAccounts.length + ' account' + (cachedAccounts.length !== 1 ? 's' : '') + ' configured</p>'
+    + '</div>'
+    + '<button onclick="openLoginModal()"'
+    + ' class="text-[12px] bg-accent text-white hover:opacity-90 px-4 py-2 rounded-lg font-semibold transition-opacity shadow-sm flex items-center gap-1.5">'
+    + '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>'
+    + 'Add Account</button>'
+    + '</div>'
+    + accountsHtml
+    + '</div>';
+}
+
+function accountCard(acc) {
+  const statusText = acc.healthy ? (acc.active > 0 ? acc.active + ' active' : 'Idle') : 'Unhealthy';
+  const statusColor = acc.healthy ? 'emerald' : 'red';
+  const rl = acc.rateLimit;
+  const pu = acc.planUsage;
+
+  // Quota badge
+  let quotaBadge = '';
+  if (rl) {
+    const isLimited = rl.status === 'limited';
+    if (isLimited) {
+      const resetIn = formatResetTime(rl.resetsAt);
+      quotaBadge = '<span class="text-[10px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 px-2 py-0.5 rounded-md font-medium">Limited ' + resetIn + '</span>';
+    } else {
+      quotaBadge = '<span class="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 px-2 py-0.5 rounded-md font-medium">Available</span>';
+    }
+  }
+
+  // Plan usage mini bars + 5h reset time
+  var accRl = acc.rateLimit;
+  var fiveHourReset = '';
+  if (accRl && accRl.resetsAt) {
+    fiveHourReset = formatResetTime(accRl.resetsAt) + ' (' + new Date(accRl.resetsAt * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + ')';
+  } else if (pu && pu.sessionResets) {
+    fiveHourReset = pu.sessionResets;
+  }
+  let usageBars = '';
+  if (pu && pu.updatedAt) {
+    usageBars = '<div class="flex items-center gap-4 mt-2 pt-2 border-t border-border-subtle">'
+      + miniUsageBar('5h', pu.sessionUsed, fiveHourReset)
+      + miniUsageBar('Weekly', pu.weeklyUsed, pu.weeklyResets || '')
+      + miniUsageBar('Sonnet', pu.sonnetUsed, pu.sonnetResets || '')
+      + '</div>';
+  }
+
+  const initials = acc.name.slice(0, 2).toUpperCase();
+  const hue = hashCode(acc.name) % 360;
+
+  return '<div class="bg-surface-1 border border-border rounded-xl px-4 py-3.5 card-lift cursor-pointer group" onclick="showAccountDetail(\'' + esc(acc.name) + '\')">'
+    + '<div class="flex items-center justify-between">'
+    + '<div class="flex items-center gap-3.5">'
+    + '<div class="w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-bold tracking-tight shadow-sm" style="background:hsl(' + hue + ',40%,92%);color:hsl(' + hue + ',50%,35%)">' + initials + '</div>'
+    + '<div>'
+    + '<p class="text-[13px] font-semibold text-fg">' + esc(acc.name) + '</p>'
+    + '<p class="text-[11px] text-fg-faint tabular-nums font-medium">' + acc.requestCount + ' req' + (acc.requestCount !== 1 ? 's' : '') + (acc.usage ? ' &middot; $' + acc.usage.totalCostUsd.toFixed(4) : '') + '</p>'
+    + '</div></div>'
+    + '<div class="flex items-center gap-3">'
+    + quotaBadge
+    + '<span class="inline-flex items-center gap-1.5 text-[11px] font-medium">'
+    + '<span class="w-1.5 h-1.5 rounded-full bg-' + statusColor + '-500 ' + (acc.healthy && acc.active === 0 ? 'pulse-dot' : '') + '"></span>'
+    + '<span class="text-' + statusColor + '-600 dark:text-' + statusColor + '-400">' + statusText + '</span></span>'
+    + '<svg class="w-4 h-4 text-fg-faint/40 group-hover:text-fg-faint transition-colors" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>'
+    + '</div></div>'
+    + usageBars
+    + '</div>';
+}
+
+function miniUsageBar(label, pct, resetText) {
+  if (pct === undefined || pct === null) return '';
+  var color = pct > 80 ? 'bg-red-500' : pct > 50 ? 'bg-amber-500' : 'bg-emerald-500';
+  return '<div class="flex-1 min-w-0">'
+    + '<div class="flex items-center justify-between mb-0.5">'
+    + '<span class="text-[10px] text-fg-faint font-medium uppercase tracking-wider">' + label + '</span>'
+    + '<span class="text-[10px] text-fg-muted tabular-nums font-semibold">' + pct + '%</span>'
+    + '</div>'
+    + '<div class="w-full bg-surface-2 rounded-full h-1"><div class="' + color + ' h-1 rounded-full transition-all duration-500" style="width:' + Math.min(pct, 100) + '%"></div></div>'
+    + (resetText ? '<div class="text-[10px] text-fg-faint mt-0.5 tabular-nums">' + resetText + '</div>' : '')
+    + '</div>';
+}
+
+let cachedLogs = [];
+
+async function renderLogs($el) {
+  // Show loading state
+  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-6xl page-enter">'
+    + '<div class="mb-6"><h1 class="font-serif text-[28px] tracking-tight leading-none">Request Logs</h1>'
+    + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">Loading...</p></div>'
+    + '<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full spin"></div></div></div>';
+
+  try {
+    cachedLogs = await api('GET', '/api/logs');
+  } catch (e) {
+    cachedLogs = [];
+  }
+
+  // Group logs by date
+  var today = new Date().toDateString();
+  var yesterday = new Date(Date.now() - 86400000).toDateString();
+
+  const rows = cachedLogs.map(function(log) {
+    const t = new Date(log.timestamp * 1000);
+    const time = t.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+    const model = (log.model || 'default').replace('claude-', '').replace('-20250514', '');
+    const mode = log.stream ? 'SSE' : 'JSON';
+    const dur = log.durationMs < 1000 ? log.durationMs + 'ms' : (log.durationMs / 1000).toFixed(1) + 's';
+    const cost = log.totalCostUsd > 0 ? '$' + log.totalCostUsd.toFixed(6) : '--';
+
+    var cacheInfo = '';
+    if (log.cacheReadInputTokens > 0) cacheInfo += '<span class="text-emerald-600 dark:text-emerald-400">R:' + formatTokens(log.cacheReadInputTokens) + '</span> ';
+    if (log.cacheCreation1h > 0) cacheInfo += '<span class="text-amber-600 dark:text-amber-400">1h:' + formatTokens(log.cacheCreation1h) + '</span> ';
+    if (log.cacheCreation5m > 0) cacheInfo += '<span class="text-blue-600 dark:text-blue-400">5m:' + formatTokens(log.cacheCreation5m) + '</span> ';
+    if (!cacheInfo) cacheInfo = '<span class="text-fg-faint">--</span>';
+
+    // Total tokens for quick glance
+    var totalTokens = (log.inputTokens || 0) + (log.outputTokens || 0);
+
+    return '<tr class="border-b border-border-subtle last:border-0 table-row-hover transition-colors">'
+      + '<td class="px-3 py-2.5 text-fg-faint tabular-nums text-[11px]">' + time + '</td>'
+      + '<td class="px-3 py-2.5"><span class="font-medium text-[11px]">' + esc(log.account) + '</span></td>'
+      + '<td class="px-3 py-2.5"><span class="text-[10px] bg-surface-2 border border-border-subtle px-1.5 py-0.5 rounded font-mono tabular-nums">' + esc(model) + '</span></td>'
+      + '<td class="px-3 py-2.5 text-center"><span class="text-[10px] px-1.5 py-0.5 rounded font-medium '
+        + (log.stream ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30' : 'text-fg-muted bg-surface-1')
+        + '">' + mode + '</span></td>'
+      + '<td class="px-3 py-2.5 text-right tabular-nums text-[11px]">' + formatTokens(log.inputTokens) + '</td>'
+      + '<td class="px-3 py-2.5 text-right tabular-nums text-[11px]">' + formatTokens(log.outputTokens) + '</td>'
+      + '<td class="px-3 py-2.5 text-right text-[10px] tabular-nums">' + cacheInfo + '</td>'
+      + '<td class="px-3 py-2.5 text-right tabular-nums text-fg-muted text-[11px]">' + dur + '</td>'
+      + '<td class="px-3 py-2.5 text-right tabular-nums font-medium text-[11px]">' + cost + '</td>'
+      + '</tr>';
+  }).join('');
+
+  // Summary stats for logs
+  var totalIn = 0, totalOut = 0, totalCost = 0;
+  cachedLogs.forEach(function(l) {
+    totalIn += l.inputTokens || 0;
+    totalOut += l.outputTokens || 0;
+    totalCost += l.totalCostUsd || 0;
+  });
+
+  var summaryHtml = cachedLogs.length > 0
+    ? '<div class="flex items-center gap-4 text-[11px] text-fg-faint tabular-nums mb-4">'
+      + '<span>In: <strong class="text-fg-muted">' + formatTokens(totalIn) + '</strong></span>'
+      + '<span>Out: <strong class="text-fg-muted">' + formatTokens(totalOut) + '</strong></span>'
+      + '<span>Cost: <strong class="text-fg-muted">$' + totalCost.toFixed(4) + '</strong></span>'
+      + '</div>'
+    : '';
+
+  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-6xl page-enter">'
+    + '<div class="mb-6">'
+    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Request Logs</h1>'
+    + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">' + cachedLogs.length + ' recent requests</p>'
+    + '</div>'
+    + summaryHtml
+    + (cachedLogs.length === 0
+      ? '<div class="border-2 border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">'
+        + '<svg class="w-8 h-8 text-fg-faint/40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>'
+        + '<p class="text-[12px] text-fg-muted font-medium">No requests yet</p></div>'
+      : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0 overflow-x-auto">'
+        + '<table class="w-full text-[11px]">'
+        + '<thead><tr class="border-b border-border text-fg-faint bg-surface-1">'
+        + '<th class="text-left font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Time</th>'
+        + '<th class="text-left font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Account</th>'
+        + '<th class="text-left font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Model</th>'
+        + '<th class="text-center font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Mode</th>'
+        + '<th class="text-right font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">In</th>'
+        + '<th class="text-right font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Out</th>'
+        + '<th class="text-right font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Cache</th>'
+        + '<th class="text-right font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Duration</th>'
+        + '<th class="text-right font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Cost</th>'
+        + '</tr></thead>'
+        + '<tbody>' + rows + '</tbody>'
+        + '</table></div>')
+    + '</div>';
+}
+
+// ── Settings Page ──
+async function renderSettings($el) {
+  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-2xl page-enter">'
+    + '<div class="mb-6">'
+    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Settings</h1>'
+    + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">Runtime configuration</p>'
+    + '</div>'
+    + '<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full spin"></div></div></div>';
+
+  let settings;
+  try {
+    settings = await api('GET', '/api/settings');
+  } catch {
+    settings = { maxConcurrency: 1, maxTurns: 10 };
+  }
+
+  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-2xl page-enter">'
+    + '<div class="mb-6">'
+    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Settings</h1>'
+    + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">Runtime configuration</p>'
+    + '</div>'
+    + '<div class="space-y-4">'
+    + settingRow('Max Concurrency', 'maxConcurrency', settings.maxConcurrency,
+        'Maximum concurrent requests per account. Higher values increase throughput but may trigger rate limits.')
+    + settingRow('Max Turns', 'maxTurns', settings.maxTurns,
+        'Maximum tool-use turns per CLI request. Set to 1 for pure proxy mode.')
+    + '</div>'
+    + '<div id="settingsSaveStatus" class="mt-4 text-[11px] text-fg-faint"></div>'
+    + '</div>';
+}
+
+function settingRow(label, key, value, description) {
+  return '<div class="bg-surface-1 border border-border rounded-xl px-5 py-4">'
+    + '<div class="flex items-center justify-between">'
+    + '<div>'
+    + '<p class="text-[12px] font-semibold text-fg">' + label + '</p>'
+    + '<p class="text-[11px] text-fg-faint mt-0.5">' + description + '</p>'
+    + '</div>'
+    + '<div class="flex items-center gap-2">'
+    + '<button onclick="adjustSetting(\'' + key + '\', -1)" class="w-7 h-7 rounded-lg border border-border flex items-center justify-center text-fg-muted hover:text-fg hover:bg-surface-2 transition-colors text-[14px] font-medium">&minus;</button>'
+    + '<span id="setting_' + key + '" class="text-[14px] font-semibold tabular-nums w-8 text-center">' + value + '</span>'
+    + '<button onclick="adjustSetting(\'' + key + '\', 1)" class="w-7 h-7 rounded-lg border border-border flex items-center justify-center text-fg-muted hover:text-fg hover:bg-surface-2 transition-colors text-[14px] font-medium">+</button>'
+    + '</div>'
+    + '</div></div>';
+}
+
+async function adjustSetting(key, delta) {
+  const $val = document.getElementById('setting_' + key);
+  if (!$val) return;
+  let current = parseInt($val.textContent) || 1;
+  let next = current + delta;
+  if (next < 1) next = 1;
+  $val.textContent = next;
+
+  const $status = document.getElementById('settingsSaveStatus');
+
+  try {
+    const body = {};
+    body[key] = next;
+    await api('PUT', '/api/settings', body);
+    if ($status) {
+      $status.textContent = label(key) + ' updated to ' + next;
+      $status.className = 'mt-4 text-[11px] text-emerald-600 dark:text-emerald-400';
+      setTimeout(() => { $status.textContent = ''; $status.className = 'mt-4 text-[11px] text-fg-faint'; }, 2000);
+    }
+  } catch (e) {
+    $val.textContent = current;
+    if ($status) {
+      $status.textContent = 'Failed to save: ' + e.message;
+      $status.className = 'mt-4 text-[11px] text-red-600 dark:text-red-400';
+    }
+  }
+}
+
+function label(key) {
+  return { maxConcurrency: 'Max Concurrency', maxTurns: 'Max Turns' }[key] || key;
+}
+
+function hashCode(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash);
+}
+
+function formatTokens(n) {
+  if (!n || n === 0) return '0';
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return n.toLocaleString();
+}
+
+function formatResetTime(ts) {
+  if (!ts) return '';
+  const diff = ts - Math.floor(Date.now() / 1000);
+  if (diff <= 0) return 'resetting...';
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  if (h > 0) return `resets in ${h}h ${m}m`;
+  return `resets in ${m}m`;
+}
+
+// ── Account Detail ──
+async function showAccountDetail(name) {
+  const $modal = document.getElementById('detailModal');
+  const $title = document.getElementById('detailTitle');
+  const $body = document.getElementById('detailBody');
+
+  $title.textContent = name;
+  $body.innerHTML = '<div class="flex items-center gap-2 py-8 justify-center"><div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full spin"></div><span class="text-fg-faint text-[12px]">Loading...</span></div>';
+  $modal.classList.remove('hidden');
+
+  try {
+    const acc = cachedAccounts.find(a => a.name === name);
+    const rl = acc?.rateLimit;
+    const usage = acc?.usage;
+    const pu = acc?.planUsage;
+
+    // Plan usage section with nice bars
+    // Use rateLimit.resetsAt for the 5h reset time
+    var fiveHourResetStr = '';
+    if (rl && rl.resetsAt) {
+      fiveHourResetStr = formatResetTime(rl.resetsAt) + ' (' + new Date(rl.resetsAt * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + ')';
+    } else if (pu && pu.sessionResets) {
+      fiveHourResetStr = pu.sessionResets;
+    }
+    let planSection = '';
+    if (pu && pu.updatedAt) {
+      planSection = '<div class="mt-3 pt-3 border-t border-border">'
+        + '<p class="text-[10px] text-fg-faint uppercase tracking-wider font-semibold mb-3">Plan Usage</p>'
+        + '<div class="space-y-3">'
+        + usageBarFull('5-hour usage', pu.sessionUsed, fiveHourResetStr || pu.sessionResets)
+        + usageBarFull('Weekly (all models)', pu.weeklyUsed, pu.weeklyResets)
+        + usageBarFull('Weekly (Sonnet)', pu.sonnetUsed, pu.sonnetResets)
+        + (pu.extraUsage ? '<div class="flex items-center justify-between text-[11px]"><span class="text-fg-muted">Extra usage</span><span class="text-fg font-medium">' + esc(pu.extraUsage) + '</span></div>' : '')
+        + '</div></div>';
+    }
+
+    let quotaSection = '';
+    if (rl) {
+      const isLimited = rl.status === 'limited';
+      const statusBadge = isLimited
+        ? '<span class="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 px-2 py-0.5 rounded-md text-[11px] font-medium">Limited</span>'
+        : '<span class="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 px-2 py-0.5 rounded-md text-[11px] font-medium">Available</span>';
+      quotaSection = '<div class="mt-3 pt-3 border-t border-border space-y-1">'
+        + '<p class="text-[10px] text-fg-faint uppercase tracking-wider font-semibold mb-2">Rate Limit</p>'
+        + detailRow('Status', statusBadge)
+        + detailRow('Type', esc(rl.rateLimitType || 'five_hour'))
+        + (rl.resetsAt ? detailRow('Resets', formatResetTime(rl.resetsAt) + ' <span class="text-fg-faint">(' + new Date(rl.resetsAt * 1000).toLocaleTimeString() + ')</span>') : '')
+        + (rl.updatedAt ? detailRow('Last Check', new Date(rl.updatedAt * 1000).toLocaleTimeString()) : '')
+        + '</div>';
+    }
+
+    let usageSection = '';
+    if (usage) {
+      usageSection = '<div class="mt-3 pt-3 border-t border-border space-y-1">'
+        + '<p class="text-[10px] text-fg-faint uppercase tracking-wider font-semibold mb-2">Token Usage</p>'
+        + '<div class="grid grid-cols-2 gap-x-4 gap-y-1">'
+        + detailRowCompact('Input', formatTokens(usage.inputTokens))
+        + detailRowCompact('Output', formatTokens(usage.outputTokens))
+        + detailRowCompact('Cache Read', formatTokens(usage.cacheReadInputTokens))
+        + detailRowCompact('Cache 1h', formatTokens(usage.cacheCreation1h || 0))
+        + detailRowCompact('Cache 5m', formatTokens(usage.cacheCreation5m || 0))
+        + '</div>'
+        + '<div class="flex items-center justify-between py-2 mt-1 border-t border-border-subtle">'
+        + '<span class="text-fg-muted font-medium">Total Cost</span>'
+        + '<span class="font-semibold text-accent">$' + usage.totalCostUsd.toFixed(4) + '</span>'
+        + '</div></div>';
+    }
+
+    // Concurrency control
+    var concurrencySection = '<div class="mt-3 pt-3 border-t border-border">'
+      + '<div class="flex items-center justify-between">'
+      + '<div>'
+      + '<p class="text-[11px] text-fg-muted font-medium">Max Concurrency</p>'
+      + '<p class="text-[10px] text-fg-faint">0 = global default</p>'
+      + '</div>'
+      + '<div class="flex items-center gap-2">'
+      + '<button onclick="adjustAccountConcurrency(\'' + esc(name) + '\', -1)" class="w-6 h-6 rounded-md border border-border flex items-center justify-center text-fg-muted hover:text-fg hover:bg-surface-2 text-[12px] font-medium">&minus;</button>'
+      + '<span id="accConc_' + esc(name) + '" class="text-[12px] font-semibold tabular-nums w-6 text-center">' + (acc.maxConcurrency || 0) + '</span>'
+      + '<button onclick="adjustAccountConcurrency(\'' + esc(name) + '\', 1)" class="w-6 h-6 rounded-md border border-border flex items-center justify-center text-fg-muted hover:text-fg hover:bg-surface-2 text-[12px] font-medium">+</button>'
+      + '</div>'
+      + '</div></div>';
+
+    $body.innerHTML = '<div class="space-y-1 fade-in">'
+      + detailRow('Status', acc && acc.healthy
+        ? '<span class="text-emerald-600 dark:text-emerald-400 font-medium">Healthy</span>'
+        : '<span class="text-red-600 dark:text-red-400 font-medium">Unhealthy</span>')
+      + (acc ? detailRow('Requests', String(acc.requestCount || 0)) : '')
+      + '</div>'
+      + concurrencySection
+      + planSection
+      + quotaSection
+      + usageSection
+      + '<div class="mt-3 pt-3 border-t border-border space-y-2">'
+      + '<div class="grid grid-cols-2 gap-2">'
+      + '<button onclick="fetchUsage(\'' + esc(name) + '\')" id="usageBtn"'
+      + ' class="text-[11px] border border-border text-fg-muted hover:text-fg py-2 rounded-lg transition-colors font-medium hover:bg-surface-1">Fetch Usage</button>'
+      + '<button onclick="refreshQuota(\'' + esc(name) + '\')" id="quotaRefreshBtn"'
+      + ' class="text-[11px] border border-border text-fg-muted hover:text-fg py-2 rounded-lg transition-colors font-medium hover:bg-surface-1">Refresh Quota</button>'
+      + '</div>'
+      + '<div id="usageResult" class="hidden"></div>'
+      + '<button onclick="deleteAccount(\'' + esc(name) + '\')" id="deleteAccountBtn"'
+      + ' class="w-full text-[11px] border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 py-2 rounded-lg transition-colors font-medium">Delete Account</button>'
+      + '</div>';
+  } catch (e) {
+    $body.innerHTML = '<p class="text-red-600 dark:text-red-400 text-[11px]">Failed to load: ' + esc(e.message) + '</p>';
+  }
+}
+
+function usageBarFull(label, pct, resets) {
+  if (pct === undefined || pct === null) return '';
+  var color = pct > 80 ? 'bg-red-500' : pct > 50 ? 'bg-amber-500' : 'bg-emerald-500';
+  var textColor = pct > 80 ? 'text-red-600 dark:text-red-400' : pct > 50 ? 'text-amber-600 dark:text-amber-400' : 'text-fg';
+  return '<div>'
+    + '<div class="flex items-center justify-between mb-1">'
+    + '<span class="text-[11px] text-fg-muted">' + label + '</span>'
+    + '<span class="text-[11px] ' + textColor + ' font-semibold tabular-nums">' + pct + '%</span>'
+    + '</div>'
+    + '<div class="w-full bg-surface-2 rounded-full h-1.5"><div class="' + color + ' h-1.5 rounded-full transition-all duration-500" style="width:' + Math.min(pct, 100) + '%"></div></div>'
+    + (resets ? '<div class="text-[10px] text-fg-faint mt-0.5 tabular-nums">' + esc(resets) + '</div>' : '')
+    + '</div>';
+}
+
+async function fetchUsage(name) {
+  const btn = document.getElementById('usageBtn');
+  const $result = document.getElementById('usageResult');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Fetching...';
+  $result.classList.add('hidden');
+
+  try {
+    const data = await api('GET', '/api/usage?account=' + encodeURIComponent(name));
+    if (data.entries && data.entries.length > 0) {
+      let html = '<div class="space-y-2.5 mt-2">';
+      for (const e of data.entries) {
+        const pct = e.used || 0;
+        const barColor = pct > 80 ? 'bg-red-500' : pct > 50 ? 'bg-amber-500' : 'bg-emerald-500';
+        html += '<div class="text-[11px]">';
+        html += '<div class="flex justify-between text-fg-muted mb-0.5"><span>' + esc(e.label) + '</span><span class="font-semibold text-fg tabular-nums">' + pct + '%</span></div>';
+        html += '<div class="w-full bg-surface-2 rounded-full h-1.5"><div class="' + barColor + ' h-1.5 rounded-full transition-all duration-500" style="width:' + Math.min(pct, 100) + '%"></div></div>';
+        if (e.resetsAt) html += '<div class="text-[10px] text-fg-faint mt-0.5 tabular-nums">' + esc(e.resetsAt) + '</div>';
+        if (e.extraUsage) html += '<div class="text-[10px] text-fg-faint mt-0.5">Extra usage: ' + esc(e.extraUsage) + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+      $result.innerHTML = html;
+      $result.classList.remove('hidden');
+    }
+    btn.textContent = 'Fetch Usage';
+    btn.disabled = false;
+    // Reload to update plan usage in pool
+    await loadAll(true);
+    // Refresh detail modal to show updated plan usage
+    await showAccountDetail(name);
+  } catch (e) {
+    btn.textContent = 'Failed: ' + e.message;
+    setTimeout(() => { btn.textContent = 'Fetch Usage'; btn.disabled = false; }, 3000);
+  }
+}
+
+async function refreshQuota(name) {
+  const btn = document.getElementById('quotaRefreshBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+
+  try {
+    await api('POST', '/api/refresh-quota?account=' + encodeURIComponent(name));
+    await loadAll(true);
+    await showAccountDetail(name);
+  } catch (e) {
+    btn.textContent = 'Failed: ' + e.message;
+    setTimeout(() => { btn.textContent = 'Refresh Quota'; btn.disabled = false; }, 2000);
+  }
+}
+
+async function deleteAccount(name) {
+  if (!confirm('Delete account "' + name + '"? This will remove its config directory.')) return;
+  const btn = document.getElementById('deleteAccountBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Deleting...';
+
+  try {
+    await api('DELETE', '/api/accounts?account=' + encodeURIComponent(name));
+    document.getElementById('detailModal').classList.add('hidden');
+    await loadAll();
+  } catch (e) {
+    btn.textContent = 'Failed: ' + e.message;
+    setTimeout(() => { btn.textContent = 'Delete Account'; btn.disabled = false; }, 2000);
+  }
+}
+
+async function adjustAccountConcurrency(name, delta) {
+  const $val = document.getElementById('accConc_' + name);
+  if (!$val) return;
+  let current = parseInt($val.textContent) || 0;
+  let next = current + delta;
+  if (next < 0) next = 0;
+  $val.textContent = next;
+
+  try {
+    await api('PUT', '/api/accounts/concurrency', { account: name, maxConcurrency: next });
+  } catch (e) {
+    $val.textContent = current;
+  }
+}
+
+function detailRow(label, value) {
+  return '<div class="flex items-center justify-between py-2 border-b border-border-subtle last:border-0">'
+    + '<span class="text-fg-muted">' + label + '</span>'
+    + '<span class="text-fg">' + value + '</span>'
+    + '</div>';
+}
+
+function detailRowCompact(label, value) {
+  return '<div class="flex items-center justify-between py-1">'
+    + '<span class="text-fg-faint text-[11px]">' + label + '</span>'
+    + '<span class="text-fg tabular-nums text-[11px] font-medium">' + value + '</span>'
+    + '</div>';
+}
+
+// ── Login Modal ──
+function openLoginModal() {
+  document.getElementById('loginModal').classList.remove('hidden');
+}
+
+function closeLoginModal() {
+  document.getElementById('loginModal').classList.add('hidden');
+}
+
+// ── Util ──
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', function(e) {
+  // Escape to close modals
+  if (e.key === 'Escape') {
+    document.getElementById('detailModal').classList.add('hidden');
+    closeLoginModal();
+  }
+  // R to refresh (when not in input)
+  if (e.key === 'r' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT') {
+    loadAll();
+  }
+});
+
+// ── Init ──
+loadAll();
+</script>
+</body>
+</html>
