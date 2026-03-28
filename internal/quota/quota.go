@@ -239,7 +239,11 @@ var ansiPattern = regexp.MustCompile(
 )
 
 func stripANSI(s string) string {
-	s = ansiPattern.ReplaceAllString(s, " ")
+	// Step 1: Remove ANSI escape sequences (don't replace with space — they can appear mid-word)
+	s = ansiPattern.ReplaceAllString(s, "")
+
+	// Step 2: Walk bytes, keep printable ASCII and newlines.
+	// Replace control chars with a space to separate TUI cells, but collapse runs.
 	var clean []byte
 	lastSpace := false
 	for i := 0; i < len(s); i++ {
@@ -257,7 +261,7 @@ func stripANSI(s string) string {
 				lastSpace = false
 			}
 		} else {
-			// Replace other control chars with space (helps separate TUI cells)
+			// Control chars / non-ASCII → treat as word boundary (space)
 			if !lastSpace {
 				clean = append(clean, ' ')
 				lastSpace = true
