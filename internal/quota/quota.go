@@ -29,7 +29,7 @@ type UsageResult struct {
 	Raw     string       `json:"raw"`
 }
 
-var pctPattern = regexp.MustCompile(`(\d+)%\s*used`)
+var pctPattern = regexp.MustCompile(`(\d+)\s*%\s*used`)
 
 // ensureOnboarded makes sure the account's .claude.json has onboarding completed
 // so that interactive mode doesn't show setup dialogs.
@@ -271,57 +271,52 @@ func stripANSI(s string) string {
 	return string(clean)
 }
 
+// Fuzzy patterns that tolerate broken/missing characters from TUI output.
+// Each pattern matches a label region followed by a percentage.
+var usagePatterns = []struct {
+	label   string
+	pattern *regexp.Regexp
+}{
+	// Allow arbitrary whitespace/garbage between characters of key words
+	{"Current session", regexp.MustCompile(`(?i)C\s*u\s*r\s*r\s*e\s*n?\s*t?\s*s\s*e?\s*s\s*s?\s*i?\s*o?\s*n\s+(\d+)\s*%\s*u\s*s\s*e\s*d`)},
+	{"Current week (all models)", regexp.MustCompile(`(?i)C\s*u\s*r\s*r\s*e\s*n?\s*t?\s*w\s*e\s*e\s*k\s*\(?\s*a\s*l\s*l\s*m\s*o\s*d\s*e?\s*l?\s*s?\s*\)?\s+(\d+)\s*%\s*u\s*s\s*e\s*d`)},
+	{"Current week (Sonnet only)", regexp.MustCompile(`(?i)C\s*u\s*r\s*r\s*e\s*n?\s*t?\s*w\s*e\s*e\s*k\s*\(?\s*S\s*o\s*n\s*n?\s*e?\s*t?\s*o\s*n\s*l\s*y\s*\)?\s+(\d+)\s*%\s*u\s*s\s*e\s*d`)},
+}
+
+var resetPattern = regexp.MustCompile(`(?i)R\s*e\s*s\s*e?\s*t?\s*s?\s+([\w\s,:.]+?\([\w/]+\))`)
+var extraUsagePattern = regexp.MustCompile(`(?i)E\s*x\s*t\s*r\s*a\s*u\s*s\s*a\s*g\s*e\s*(n\s*o\s*t\s*e\s*n\s*a\s*b\s*l\s*e\s*d|e\s*n\s*a\s*b\s*l\s*e\s*d)`)
+
 func parseUsage(text string) *UsageResult {
 	result := &UsageResult{}
 
-	labels := []string{
-		"Current session",
-		"Current week (all models)",
-		"Current week (Sonnet only)",
-		"Extra usage",
-	}
-
-	for _, label := range labels {
-		idx := strings.Index(text, label)
-		if idx == -1 {
+	for _, up := range usagePatterns {
+		m := up.pattern.FindStringSubmatch(text)
+		if m == nil {
 			continue
 		}
+		entry := UsageEntry{Label: up.label}
+		entry.Used, _ = strconv.ParseFloat(m[1], 64)
 
-		after := text[idx+len(label):]
-		end := len(after)
-		for _, other := range labels {
-			if other == label {
-				continue
-			}
-			if pos := strings.Index(after, other); pos > 0 && pos < end {
-				end = pos
-			}
-		}
-		section := after[:end]
-
-		entry := UsageEntry{Label: label}
-
-		if m := pctPattern.FindStringSubmatch(section); m != nil {
-			entry.Used, _ = strconv.ParseFloat(m[1], 64)
-		}
-
-		if pos := strings.Index(section, "Reset"); pos >= 0 {
-			rest := section[pos:]
-			if paren := strings.Index(rest, ")"); paren > 0 {
-				entry.ResetsAt = strings.TrimSpace(rest[:paren+1])
-			} else {
-				entry.ResetsAt = strings.TrimSpace(rest)
+		// Find the reset time after the match position
+		loc := up.pattern.FindStringIndex(text)
+		if loc != nil {
+			after := text[loc[1]:]
+			if rm := resetPattern.FindStringSubmatch(after); rm != nil {
+				entry.ResetsAt = strings.TrimSpace(rm[0])
 			}
 		}
 
-		if label == "Extra usage" {
-			if strings.Contains(section, "not enabled") {
-				entry.ExtraUsage = "not enabled"
-			} else if strings.Contains(section, "enabled") {
-				entry.ExtraUsage = "enabled"
-			}
-		}
+		result.Entries = append(result.Entries, entry)
+	}
 
+	// Extra usage
+	if m := extraUsagePattern.FindStringSubmatch(text); m != nil {
+		entry := UsageEntry{Label: "Extra usage"}
+		if strings.Contains(strings.ToLower(m[1]), "not") {
+			entry.ExtraUsage = "not enabled"
+		} else {
+			entry.ExtraUsage = "enabled"
+		}
 		result.Entries = append(result.Entries, entry)
 	}
 
