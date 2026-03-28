@@ -3,6 +3,7 @@ package pool
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"nmpcc/internal/config"
@@ -61,17 +62,26 @@ type RequestLog struct {
 	Stream                   bool    `json:"stream"`
 }
 
+// AccountProfile holds identity info read from .claude.json oauthAccount.
+type AccountProfile struct {
+	DisplayName      string `json:"displayName"`
+	EmailAddress     string `json:"emailAddress"`
+	OrganizationName string `json:"organizationName,omitempty"`
+	BillingType      string `json:"billingType,omitempty"`
+}
+
 type Account struct {
-	Name           string         `json:"name"`
-	Busy           bool           `json:"busy"`
-	Active         int            `json:"active"`
-	MaxConcurrency int            `json:"maxConcurrency"` // 0 means use global default
-	Healthy        bool           `json:"healthy"`
-	RequestCount   int64          `json:"requestCount"`
-	Proxy          string         `json:"proxy,omitempty"` // Per-account proxy (socks5://... or http://...), empty = use global
-	RateLimit      *RateLimitInfo `json:"rateLimit,omitempty"`
-	Usage          *UsageInfo     `json:"usage,omitempty"`
-	PlanUsage      *PlanUsage     `json:"planUsage,omitempty"`
+	Name           string          `json:"name"`
+	Profile        *AccountProfile `json:"profile,omitempty"`
+	Busy           bool            `json:"busy"`
+	Active         int             `json:"active"`
+	MaxConcurrency int             `json:"maxConcurrency"` // 0 means use global default
+	Healthy        bool            `json:"healthy"`
+	RequestCount   int64           `json:"requestCount"`
+	Proxy          string          `json:"proxy,omitempty"` // Per-account proxy (socks5://... or http://...), empty = use global
+	RateLimit      *RateLimitInfo  `json:"rateLimit,omitempty"`
+	Usage          *UsageInfo      `json:"usage,omitempty"`
+	PlanUsage      *PlanUsage      `json:"planUsage,omitempty"`
 	lastUsed       time.Time
 }
 
@@ -123,6 +133,7 @@ func New(cfg *config.Config) *AccountPool {
 	for i, name := range names {
 		accounts[i] = &Account{
 			Name:           name,
+			Profile:        loadAccountProfile(cfg.AccountsDir, name),
 			Healthy:        true,
 			MaxConcurrency: accConc[name],
 			Proxy:          accProxy[name],
@@ -156,6 +167,22 @@ func discoverAccounts(dir string) []string {
 	}
 	log.Printf("[pool] auto-discovered %d accounts from %s: %v", len(names), dir, names)
 	return names
+}
+
+// loadAccountProfile reads .claude.json and extracts oauthAccount info.
+func loadAccountProfile(accountsDir, name string) *AccountProfile {
+	path := filepath.Join(accountsDir, name, ".claude.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var data struct {
+		OAuthAccount *AccountProfile `json:"oauthAccount"`
+	}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return nil
+	}
+	return data.OAuthAccount
 }
 
 func (p *AccountPool) Acquire(ctx context.Context) (*Slot, error) {
@@ -240,6 +267,7 @@ func (p *AccountPool) AddAccount(name string) bool {
 
 	p.accounts = append(p.accounts, &Account{
 		Name:    name,
+		Profile: loadAccountProfile(p.cfg.AccountsDir, name),
 		Healthy: true,
 	})
 	log.Printf("[pool] account %s added", name)
@@ -465,6 +493,7 @@ func (p *AccountPool) Status() []Account {
 	for i, a := range p.accounts {
 		result[i] = Account{
 			Name:           a.Name,
+			Profile:        a.Profile,
 			Busy:           a.Busy,
 			Active:         a.Active,
 			MaxConcurrency: a.effectiveMaxConcurrency(p.cfg.MaxConcurrency),

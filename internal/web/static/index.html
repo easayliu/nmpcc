@@ -683,7 +683,8 @@ function accountCard(acc) {
     + '<div class="flex items-center gap-3.5">'
     + '<div class="w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-bold tracking-tight shadow-sm" style="background:hsl(' + hue + ',40%,92%);color:hsl(' + hue + ',50%,35%)">' + initials + '</div>'
     + '<div>'
-    + '<p class="text-[13px] font-semibold text-fg">' + esc(acc.name) + '</p>'
+    + '<p class="text-[13px] font-semibold text-fg">' + esc(acc.name) + (acc.profile && acc.profile.displayName ? ' <span class="text-fg-faint font-normal">(' + esc(acc.profile.displayName) + ')</span>' : '') + '</p>'
+    + (acc.profile && acc.profile.emailAddress ? '<p class="text-[10px] text-fg-faint font-medium">' + esc(acc.profile.emailAddress) + (acc.profile.billingType ? ' &middot; ' + esc(formatBillingType(acc.profile.billingType)) : '') + '</p>' : '')
     + '<p class="text-[11px] text-fg-faint tabular-nums font-medium">' + acc.requestCount + ' req' + (acc.requestCount !== 1 ? 's' : '') + (acc.usage ? ' &middot; $' + acc.usage.totalCostUsd.toFixed(4) : '') + (acc.proxy ? ' &middot; <span class="text-blue-500" title="' + escAttr(acc.proxy) + '">proxy</span>' : '') + '</p>'
     + '</div></div>'
     + '<div class="flex items-center gap-3">'
@@ -1089,6 +1090,11 @@ function formatTokens(n) {
   return n.toLocaleString();
 }
 
+function formatBillingType(bt) {
+  if (!bt) return '';
+  return bt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function formatResetTime(ts) {
   if (!ts) return '';
   const diff = ts - Math.floor(Date.now() / 1000);
@@ -1114,6 +1120,19 @@ async function showAccountDetail(name) {
     const rl = acc?.rateLimit;
     const usage = acc?.usage;
     const pu = acc?.planUsage;
+
+    // Profile section
+    const profile = acc?.profile;
+    let profileSection = '';
+    if (profile) {
+      profileSection = '<div class="space-y-1">'
+        + '<p class="text-[10px] text-fg-faint uppercase tracking-wider font-semibold mb-2">Account Info</p>'
+        + (profile.displayName ? detailRow('Name', esc(profile.displayName)) : '')
+        + (profile.emailAddress ? detailRow('Email', esc(profile.emailAddress)) : '')
+        + (profile.billingType ? detailRow('Plan', esc(formatBillingType(profile.billingType))) : '')
+        + (profile.organizationName ? detailRow('Organization', esc(profile.organizationName)) : '')
+        + '</div>';
+    }
 
     // Plan usage section with nice bars
     // Use rateLimit.resetsAt for the 5h reset time
@@ -1205,6 +1224,7 @@ async function showAccountDetail(name) {
       + '</div>'
       + concurrencySection
       + proxySection
+      + profileSection
       + planSection
       + quotaSection
       + usageSection
