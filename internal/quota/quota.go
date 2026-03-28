@@ -228,14 +228,40 @@ drainRest:
 	}
 }
 
-var ansiPattern = regexp.MustCompile(`\x1b\[[^a-zA-Z]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[^[\]]\S*`)
+// ansiPattern covers CSI sequences, OSC sequences, and other escape sequences.
+var ansiPattern = regexp.MustCompile(
+	`\x1b\[[0-9;?]*[a-zA-Z]` + // CSI sequences (e.g. \e[1m, \e[?25l, \e[2J, \e[H)
+		`|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)` + // OSC sequences
+		`|\x1b[()][0-9A-Za-z]` + // charset selection
+		`|\x1b[=>NOM78]` + // single-char escapes
+		`|\x1b\[[\d;]*m` + // SGR (redundant safety)
+		`|\r`,
+)
 
 func stripANSI(s string) string {
-	s = ansiPattern.ReplaceAllString(s, "")
+	s = ansiPattern.ReplaceAllString(s, " ")
 	var clean []byte
+	lastSpace := false
 	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' || (s[i] >= 32 && s[i] <= 126) {
-			clean = append(clean, s[i])
+		if s[i] == '\n' {
+			clean = append(clean, '\n')
+			lastSpace = false
+		} else if s[i] >= 32 && s[i] <= 126 {
+			if s[i] == ' ' {
+				if !lastSpace {
+					clean = append(clean, ' ')
+				}
+				lastSpace = true
+			} else {
+				clean = append(clean, s[i])
+				lastSpace = false
+			}
+		} else {
+			// Replace other control chars with space (helps separate TUI cells)
+			if !lastSpace {
+				clean = append(clean, ' ')
+				lastSpace = true
+			}
 		}
 	}
 	return string(clean)
