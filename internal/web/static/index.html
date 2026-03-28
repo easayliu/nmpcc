@@ -365,7 +365,7 @@ function toggleSidebar() {
 
 // ── State ──
 let apiKey = localStorage.getItem('nmpcc_api_key') || '';
-let currentPage = 'overview';
+let currentPage = location.hash.replace('#', '') || 'overview';
 let cachedDashboard = null;
 let cachedAccounts = [];
 let lastRefreshTime = 0;
@@ -414,10 +414,15 @@ function updateSidebarUptime() {
 // ── Navigation ──
 function navigate(page) {
   currentPage = page;
+  location.hash = page;
   // Close mobile sidebar
   document.querySelector('.sidebar')?.classList.remove('open');
   render();
 }
+window.addEventListener('hashchange', function() {
+  var page = location.hash.replace('#', '');
+  if (page && page !== currentPage) { currentPage = page; render(); }
+});
 
 function render() {
   document.querySelectorAll('.nav-item').forEach(el => {
@@ -481,11 +486,22 @@ function overviewTableRow(acc) {
   return '<tr class="border-b border-border-subtle last:border-0 table-row-hover transition-colors cursor-pointer" onclick="showAccountDetail(\'' + esc(acc.name) + '\')">'
     + '<td class="px-4 py-2.5"><div class="flex items-center gap-2.5">'
     + '<div class="w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold tracking-tight shrink-0" style="background:hsl(' + (hashCode(acc.name) % 360) + ',40%,92%);color:hsl(' + (hashCode(acc.name) % 360) + ',50%,35%)">' + acc.name.slice(0, 2).toUpperCase() + '</div>'
-    + '<span class="font-semibold text-fg">' + esc(acc.name) + '</span></div></td>'
+    + '<span class="font-semibold text-fg">' + esc(acc.name) + '</span>' + planBadgeHtml(acc.profile, 'sm') + (acc.profile && acc.profile.emailAddress ? '<div class="text-[10px] text-fg-faint font-normal">' + esc(acc.profile.emailAddress) + '</div>' : '') + '</div></td>'
     + '<td class="px-4 py-2.5"><span class="inline-flex items-center gap-1.5">'
     + '<span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>'
     + '<span class="font-medium ' + textClass + '">' + statusText + '</span>' + rlBadge
     + '</span></td>'
+    + '<td class="px-4 py-2.5">' + (function(p) {
+        if (!p) return '<span class="text-fg-faint">--</span>';
+        var lines = '';
+        if (p.subscriptionCreatedAt) lines += '<div class="text-[10px] text-fg-muted">Since ' + new Date(p.subscriptionCreatedAt).toLocaleDateString() + '</div>';
+        if (p.tokenExpiresAt) {
+          var exp = new Date(p.tokenExpiresAt);
+          var isExpired = exp < new Date();
+          lines += '<div class="text-[10px] ' + (isExpired ? 'text-red-500' : 'text-fg-faint') + '">Token ' + (isExpired ? 'expired' : 'expires') + ' ' + exp.toLocaleDateString() + '</div>';
+        }
+        return lines || '<span class="text-fg-faint">--</span>';
+      })(acc.profile) + '</td>'
     + '<td class="px-4 py-2.5">' + fiveHourCell + resetInfo + '</td>'
     + '<td class="px-4 py-2.5">' + weeklyCell + weeklyResetInfo + '</td>'
     + '<td class="px-4 py-2.5 text-right text-fg-muted tabular-nums font-medium text-[11px]">' + (acc.usage ? '$' + acc.usage.totalCostUsd.toFixed(4) : '--') + '</td>'
@@ -521,6 +537,7 @@ function renderOverview($el) {
       + '<thead><tr class="border-b border-border text-fg-faint bg-surface-1">'
       + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Account</th>'
       + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Status</th>'
+      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Subscription</th>'
       + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">5h</th>'
       + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Weekly</th>'
       + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Cost</th>'
@@ -683,7 +700,7 @@ function accountCard(acc) {
     + '<div class="flex items-center gap-3.5">'
     + '<div class="w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-bold tracking-tight shadow-sm" style="background:hsl(' + hue + ',40%,92%);color:hsl(' + hue + ',50%,35%)">' + initials + '</div>'
     + '<div>'
-    + '<p class="text-[13px] font-semibold text-fg">' + esc(acc.name) + (acc.profile && acc.profile.displayName ? ' <span class="text-fg-faint font-normal">(' + esc(acc.profile.displayName) + ')</span>' : '') + (acc.profile ? (function(p){ var plan = formatPlanName(p); return plan ? ' <span class="text-[10px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/40 px-1.5 py-0.5 rounded-md font-medium">' + esc(plan) + '</span>' : ''; })(acc.profile) : '') + '</p>'
+    + '<p class="text-[13px] font-semibold text-fg">' + esc(acc.name) + (acc.profile && acc.profile.displayName ? ' <span class="text-fg-faint font-normal">(' + esc(acc.profile.displayName) + ')</span>' : '') + planBadgeHtml(acc.profile) + '</p>'
     + (acc.profile && acc.profile.emailAddress ? '<p class="text-[10px] text-fg-faint font-medium">' + esc(acc.profile.emailAddress) + '</p>' : '')
     + '<p class="text-[11px] text-fg-faint tabular-nums font-medium">' + acc.requestCount + ' req' + (acc.requestCount !== 1 ? 's' : '') + (acc.usage ? ' &middot; $' + acc.usage.totalCostUsd.toFixed(4) : '') + (acc.proxy ? ' &middot; <span class="text-blue-500" title="' + escAttr(acc.proxy) + '">proxy</span>' : '') + '</p>'
     + '</div></div>'
@@ -1097,16 +1114,34 @@ function formatBillingType(bt) {
 
 function formatPlanName(profile) {
   if (!profile) return '';
-  // Derive readable plan name from rateLimitTier or subscriptionType
   var tier = profile.rateLimitTier || '';
   var sub = profile.subscriptionType || '';
-  // e.g. "default_claude_max_5x" → "Max 5x"
   var m = tier.match(/max[_\s]*(\d+x)/i);
   if (m) return 'Max ' + m[1].toUpperCase();
   if (sub === 'max') return 'Max';
   if (sub === 'pro') return 'Pro';
   if (sub) return sub.charAt(0).toUpperCase() + sub.slice(1);
   return '';
+}
+
+function planBadgeColors(plan) {
+  // Returns [text, bg, border] tailwind classes per plan tier
+  switch (plan) {
+    case 'Max 20X': return ['text-amber-600 dark:text-amber-400', 'bg-amber-50 dark:bg-amber-950/30', 'border-amber-200 dark:border-amber-900/40'];
+    case 'Max 5X':  return ['text-purple-600 dark:text-purple-400', 'bg-purple-50 dark:bg-purple-950/30', 'border-purple-200 dark:border-purple-900/40'];
+    case 'Max':     return ['text-indigo-600 dark:text-indigo-400', 'bg-indigo-50 dark:bg-indigo-950/30', 'border-indigo-200 dark:border-indigo-900/40'];
+    case 'Pro':     return ['text-blue-600 dark:text-blue-400', 'bg-blue-50 dark:bg-blue-950/30', 'border-blue-200 dark:border-blue-900/40'];
+    default:        return ['text-slate-600 dark:text-slate-400', 'bg-slate-50 dark:bg-slate-950/30', 'border-slate-200 dark:border-slate-900/40'];
+  }
+}
+
+function planBadgeHtml(profile, size) {
+  if (!profile) return '';
+  var plan = formatPlanName(profile);
+  if (!plan) return '';
+  var c = planBadgeColors(plan);
+  var sz = size === 'sm' ? 'text-[9px] px-1 py-0.5' : 'text-[10px] px-1.5 py-0.5';
+  return ' <span class="' + sz + ' ' + c[0] + ' ' + c[1] + ' border ' + c[2] + ' rounded-md font-medium">' + esc(plan) + '</span>';
 }
 
 function formatResetTime(ts) {
@@ -1152,7 +1187,7 @@ async function showAccountDetail(name) {
         + '<p class="text-[10px] text-fg-faint uppercase tracking-wider font-semibold mb-2">Account Info</p>'
         + (profile.displayName ? detailRow('Name', esc(profile.displayName)) : '')
         + (profile.emailAddress ? detailRow('Email', esc(profile.emailAddress)) : '')
-        + (planName ? detailRow('Subscription', '<span class="text-purple-600 dark:text-purple-400 font-medium">' + esc(planName) + '</span>') : '')
+        + (planName ? detailRow('Subscription', planBadgeHtml(profile)) : '')
         + (profile.rateLimitTier ? detailRow('Rate Limit Tier', esc(profile.rateLimitTier)) : '')
         + (profile.organizationName ? detailRow('Organization', esc(profile.organizationName) + (profile.organizationRole ? ' <span class="text-fg-faint">(' + esc(profile.organizationRole) + ')</span>' : '')) : '')
         + (profile.accountCreatedAt ? detailRow('Account Created', new Date(profile.accountCreatedAt).toLocaleDateString()) : '')
