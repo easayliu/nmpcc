@@ -143,6 +143,8 @@
       .sidebar { display: none; }
       .sidebar.open { display: flex; position: fixed; z-index: 40; inset: 0; width: 100%; background: var(--surface-0); }
       .mobile-menu-btn { display: flex !important; }
+      .hide-mobile { display: none !important; }
+      .mobile-text-sm { font-size: 10px !important; }
     }
 
     /* Table row highlight */
@@ -491,7 +493,7 @@ function overviewTableRow(acc) {
     + '<span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>'
     + '<span class="font-medium ' + textClass + '">' + statusText + '</span>' + rlBadge
     + '</span></td>'
-    + '<td class="px-4 py-2.5">' + (function(p) {
+    + '<td class="px-4 py-2.5 hide-mobile">' + (function(p) {
         if (!p) return '<span class="text-fg-faint">--</span>';
         var lines = '';
         if (p.subscriptionCreatedAt) lines += '<div class="text-[10px] text-fg-muted">Since ' + new Date(p.subscriptionCreatedAt).toLocaleDateString() + '</div>';
@@ -504,7 +506,7 @@ function overviewTableRow(acc) {
       })(acc.profile) + '</td>'
     + '<td class="px-4 py-2.5">' + fiveHourCell + resetInfo + '</td>'
     + '<td class="px-4 py-2.5">' + weeklyCell + weeklyResetInfo + '</td>'
-    + '<td class="px-4 py-2.5 text-right text-fg-muted tabular-nums font-medium text-[11px]">' + (acc.usage ? '$' + acc.usage.totalCostUsd.toFixed(4) : '--') + '</td>'
+    + '<td class="px-4 py-2.5 text-right text-fg-muted tabular-nums font-medium text-[11px] hide-mobile">' + (acc.usage ? '$' + acc.usage.totalCostUsd.toFixed(4) : '--') + '</td>'
     + '<td class="px-4 py-2.5 text-right tabular-nums font-medium text-[11px]">' + acc.requestCount + '</td>'
     + '</tr>';
 }
@@ -532,28 +534,28 @@ function renderOverview($el) {
       + '<p class="text-[12px] text-fg-muted font-medium">No accounts yet</p>'
       + '<button onclick="navigate(\'accounts\');openLoginModal()" class="text-[12px] text-accent hover:underline underline-offset-2 font-medium">Add your first account</button>'
       + '</div>'
-    : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0">'
-      + '<table class="w-full text-[11px]">'
+    : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0 overflow-x-auto -mx-4 sm:mx-0 rounded-none sm:rounded-xl border-x-0 sm:border-x">'
+      + '<table class="w-full text-[11px] min-w-[480px]">'
       + '<thead><tr class="border-b border-border text-fg-faint bg-surface-1">'
       + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Account</th>'
       + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Status</th>'
-      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Subscription</th>'
+      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px] hide-mobile">Subscription</th>'
       + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">5h</th>'
       + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Weekly</th>'
-      + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Cost</th>'
+      + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px] hide-mobile">Cost</th>'
       + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Reqs</th>'
       + '</tr></thead>'
       + '<tbody class="stagger">' + tableRows + '</tbody>'
       + '</table></div>';
 
-  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-5xl page-enter">'
+  $el.innerHTML = '<div class="p-4 sm:p-6 lg:p-8 max-w-5xl page-enter">'
     + '<div class="mb-6">'
-    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Overview</h1>'
+    + '<h1 class="font-serif text-[22px] sm:text-[28px] tracking-tight leading-none">Overview</h1>'
     + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">Service status and metrics'
     + (lastRefreshTime ? ' <span class="text-fg-faint/60">&middot; updated ' + timeAgo(lastRefreshTime) + '</span>' : '')
     + '</p>'
     + '</div>'
-    + '<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 stagger mb-6">'
+    + '<div class="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-3 stagger mb-6">'
     + statCard('Uptime', d ? formatUptime(d.uptime_seconds) : '--', upArrowIcon())
     + statCard('Requests', d ? d.total_requests.toLocaleString() : '--', chartIcon())
     + statCard('Healthy', healthyVal, heartIcon(), healthColor)
@@ -642,10 +644,10 @@ function renderAccounts($el) {
     }
   }
 
-  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-4xl page-enter">'
+  $el.innerHTML = '<div class="p-4 sm:p-6 lg:p-8 max-w-4xl page-enter">'
     + '<div class="flex items-center justify-between mb-6">'
     + '<div>'
-    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Accounts</h1>'
+    + '<h1 class="font-serif text-[22px] sm:text-[28px] tracking-tight leading-none">Accounts</h1>'
     + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">' + cachedAccounts.length + ' account' + (cachedAccounts.length !== 1 ? 's' : '') + ' configured</p>'
     + '</div>'
     + '<button onclick="openLoginModal()"'
@@ -732,8 +734,8 @@ let cachedLogs = [];
 
 async function renderLogs($el) {
   // Show loading state
-  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-6xl page-enter">'
-    + '<div class="mb-6"><h1 class="font-serif text-[28px] tracking-tight leading-none">Request Logs</h1>'
+  $el.innerHTML = '<div class="p-4 sm:p-6 lg:p-8 max-w-6xl page-enter">'
+    + '<div class="mb-6"><h1 class="font-serif text-[22px] sm:text-[28px] tracking-tight leading-none">Request Logs</h1>'
     + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">Loading...</p></div>'
     + '<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full spin"></div></div></div>';
 
@@ -788,16 +790,16 @@ async function renderLogs($el) {
   });
 
   var summaryHtml = cachedLogs.length > 0
-    ? '<div class="flex items-center gap-4 text-[11px] text-fg-faint tabular-nums mb-4">'
+    ? '<div class="flex flex-wrap items-center gap-3 sm:gap-4 text-[11px] text-fg-faint tabular-nums mb-4">'
       + '<span>In: <strong class="text-fg-muted">' + formatTokens(totalIn) + '</strong></span>'
       + '<span>Out: <strong class="text-fg-muted">' + formatTokens(totalOut) + '</strong></span>'
       + '<span>Cost: <strong class="text-fg-muted">$' + totalCost.toFixed(4) + '</strong></span>'
       + '</div>'
     : '';
 
-  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-6xl page-enter">'
+  $el.innerHTML = '<div class="p-4 sm:p-6 lg:p-8 max-w-6xl page-enter">'
     + '<div class="mb-6">'
-    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Request Logs</h1>'
+    + '<h1 class="font-serif text-[22px] sm:text-[28px] tracking-tight leading-none">Request Logs</h1>'
     + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">' + cachedLogs.length + ' recent requests</p>'
     + '</div>'
     + summaryHtml
@@ -805,8 +807,8 @@ async function renderLogs($el) {
       ? '<div class="border-2 border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">'
         + '<svg class="w-8 h-8 text-fg-faint/40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>'
         + '<p class="text-[12px] text-fg-muted font-medium">No requests yet</p></div>'
-      : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0 overflow-x-auto">'
-        + '<table class="w-full text-[11px]">'
+      : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0 overflow-x-auto -mx-4 sm:mx-0 rounded-none sm:rounded-xl border-x-0 sm:border-x">'
+        + '<table class="w-full text-[11px] min-w-[700px]">'
         + '<thead><tr class="border-b border-border text-fg-faint bg-surface-1">'
         + '<th class="text-left font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Time</th>'
         + '<th class="text-left font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Account</th>'
@@ -825,9 +827,9 @@ async function renderLogs($el) {
 
 // ── Settings Page ──
 async function renderSettings($el) {
-  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-2xl page-enter">'
+  $el.innerHTML = '<div class="p-4 sm:p-6 lg:p-8 max-w-2xl page-enter">'
     + '<div class="mb-6">'
-    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Settings</h1>'
+    + '<h1 class="font-serif text-[22px] sm:text-[28px] tracking-tight leading-none">Settings</h1>'
     + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">Runtime configuration</p>'
     + '</div>'
     + '<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full spin"></div></div></div>';
@@ -839,9 +841,9 @@ async function renderSettings($el) {
     settings = { maxConcurrency: 1, maxTurns: 10, globalProxy: '', apiKeyCount: 0 };
   }
 
-  $el.innerHTML = '<div class="p-6 lg:p-8 max-w-2xl page-enter">'
+  $el.innerHTML = '<div class="p-4 sm:p-6 lg:p-8 max-w-2xl page-enter">'
     + '<div class="mb-6">'
-    + '<h1 class="font-serif text-[28px] tracking-tight leading-none">Settings</h1>'
+    + '<h1 class="font-serif text-[22px] sm:text-[28px] tracking-tight leading-none">Settings</h1>'
     + '<p class="text-[12px] text-fg-faint mt-1.5 font-medium">Runtime configuration</p>'
     + '</div>'
     + '<div class="space-y-4">'
