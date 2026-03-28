@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# nmpcc installer — downloads the latest release from GitHub and sets up systemd service.
+# nmpcc installer / updater
+# - First run: install binary, create config, set up systemd service
+# - Subsequent runs: update binary, restart service (config untouched)
 
 REPO="easayliu/nmpcc"
 INSTALL_DIR="/usr/local/bin"
@@ -9,7 +11,6 @@ SERVICE_NAME="nmpcc"
 ACCOUNTS_DIR="/accounts"
 CONFIG_FILE="/etc/nmpcc.env"
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -19,7 +20,6 @@ info()  { echo -e "${GREEN}[+]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 error() { echo -e "${RED}[x]${NC} $*"; exit 1; }
 
-# Check root
 [[ $EUID -eq 0 ]] || error "Please run as root: sudo bash install.sh"
 
 # Detect arch
@@ -29,6 +29,14 @@ case "$ARCH" in
   aarch64) ASSET="nmpcc-linux-arm64" ;;
   *)       error "Unsupported architecture: $ARCH" ;;
 esac
+
+# Detect install vs update
+IS_UPDATE=false
+if [[ -f "${INSTALL_DIR}/nmpcc" ]]; then
+  IS_UPDATE=true
+  CURRENT=$("${INSTALL_DIR}/nmpcc" --version 2>/dev/null || echo "unknown")
+  info "Existing installation detected (${CURRENT})"
+fi
 
 # Get latest release tag
 info "Fetching latest release..."
@@ -41,16 +49,32 @@ DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST}/${ASSET}"
 info "Downloading ${ASSET}..."
 curl -fsSL -o "/tmp/${ASSET}" "$DOWNLOAD_URL" || error "Download failed"
 chmod +x "/tmp/${ASSET}"
-mv "/tmp/${ASSET}" "${INSTALL_DIR}/nmpcc"
-info "Installed to ${INSTALL_DIR}/nmpcc"
 
-# Create accounts directory
-mkdir -p "$ACCOUNTS_DIR"
-info "Accounts directory: $ACCOUNTS_DIR"
+if $IS_UPDATE; then
+  # ── Update ──
+  info "Stopping service..."
+  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 
-# Create config file if not exists
-if [[ ! -f "$CONFIG_FILE" ]]; then
-  cat > "$CONFIG_FILE" << 'ENVEOF'
+  mv "/tmp/${ASSET}" "${INSTALL_DIR}/nmpcc"
+  info "Binary updated: ${INSTALL_DIR}/nmpcc"
+
+  systemctl start "$SERVICE_NAME"
+  info "Service restarted"
+
+  echo ""
+  info "Update complete! $LATEST"
+
+else
+  # ── Fresh install ──
+  mv "/tmp/${ASSET}" "${INSTALL_DIR}/nmpcc"
+  info "Installed to ${INSTALL_DIR}/nmpcc"
+
+  mkdir -p "$ACCOUNTS_DIR"
+  info "Accounts directory: $ACCOUNTS_DIR"
+
+  # Config
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    cat > "$CONFIG_FILE" << 'ENVEOF'
 # nmpcc configuration
 PORT=3000
 ACCOUNTS_DIR=/accounts
@@ -66,14 +90,12 @@ MAX_TURNS=1
 TIMEOUT_MS=300000
 QUEUE_TIMEOUT_MS=60000
 ENVEOF
-  info "Config created: $CONFIG_FILE"
-  warn "Edit $CONFIG_FILE to set SERVICE_API_KEY and WEB_PASSWORD"
-else
-  info "Config exists: $CONFIG_FILE (not overwritten)"
-fi
+    info "Config created: $CONFIG_FILE"
+    warn "Edit $CONFIG_FILE to set SERVICE_API_KEY and WEB_PASSWORD"
+  fi
 
-# Create systemd service
-cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
+  # Systemd service
+  cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
 Description=nmpcc - Claude CLI Proxy Pool
 After=network.target
@@ -90,24 +112,22 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-info "Systemd service created: ${SERVICE_NAME}.service"
+  systemctl daemon-reload
+  systemctl enable "$SERVICE_NAME" --now 2>/dev/null || true
+  info "Service created and started"
 
-# Enable and start
-systemctl enable "$SERVICE_NAME" --now 2>/dev/null || true
-info "Service started"
-
-echo ""
-info "Installation complete!"
-echo ""
-echo "  Config:    $CONFIG_FILE"
-echo "  Binary:    ${INSTALL_DIR}/nmpcc"
-echo "  Accounts:  $ACCOUNTS_DIR"
-echo "  Service:   systemctl status $SERVICE_NAME"
-echo ""
-echo "  Add accounts:"
-echo "    CLAUDE_CONFIG_DIR=${ACCOUNTS_DIR}/<name> claude auth login"
-echo ""
-echo "  Manage:"
-echo "    systemctl restart $SERVICE_NAME"
-echo "    journalctl -u $SERVICE_NAME -f"
+  echo ""
+  info "Installation complete!"
+  echo ""
+  echo "  Config:    $CONFIG_FILE"
+  echo "  Binary:    ${INSTALL_DIR}/nmpcc"
+  echo "  Accounts:  $ACCOUNTS_DIR"
+  echo "  Service:   systemctl status $SERVICE_NAME"
+  echo ""
+  echo "  Add accounts:"
+  echo "    CLAUDE_CONFIG_DIR=${ACCOUNTS_DIR}/<name> claude auth login"
+  echo ""
+  echo "  Manage:"
+  echo "    systemctl restart $SERVICE_NAME"
+  echo "    journalctl -u $SERVICE_NAME -f"
+fi
