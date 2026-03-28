@@ -94,6 +94,17 @@ ENVEOF
     warn "Edit $CONFIG_FILE to set SERVICE_API_KEY and WEB_PASSWORD"
   fi
 
+  # Detect claude location so systemd can find it
+  CLAUDE_BIN=$(command -v claude 2>/dev/null || true)
+  if [[ -z "$CLAUDE_BIN" ]]; then
+    warn "claude CLI not found in PATH — service may fail to start"
+    warn "Install claude first, then re-run this script or add its path to the service"
+    SVC_PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+  else
+    SVC_PATH="$(dirname "$CLAUDE_BIN"):${PATH}"
+    info "Found claude at: $CLAUDE_BIN"
+  fi
+
   # Systemd service
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
@@ -103,6 +114,7 @@ After=network.target
 [Service]
 Type=simple
 EnvironmentFile=$CONFIG_FILE
+Environment=PATH=${SVC_PATH}
 ExecStart=${INSTALL_DIR}/nmpcc
 Restart=always
 RestartSec=5
