@@ -284,7 +284,36 @@ var usagePatterns = []struct {
 }
 
 var resetPattern = regexp.MustCompile(`(?i)R\s*e\s*s\s*e?\s*t?\s*s?\s*([\w\s,:.]*?\(\s*[\w/]+\s*\))`)
+
+// resetTimePattern extracts time and timezone from a reset string.
+// The prefix R...s is consumed by the fuzzy reset word, then we capture the rest.
+var resetTimePattern = regexp.MustCompile(`(?i)R\s*e\s*s\s*e?\s*t?\s*s?\s*([\w\s,:.]+?)\s*\(\s*([\w/]+)\s*\)`)
 var extraUsagePattern = regexp.MustCompile(`(?i)E\s*x\s*t\s*r\s*a\s*u\s*s\s*a\s*g\s*e\s*(n\s*o\s*t\s*e\s*n\s*a\s*b\s*l\s*e\s*d|e\s*n\s*a\s*b\s*l\s*e\s*d)`)
+
+// cleanResetTime normalizes garbled reset strings like "Reses6m (Asia/Shanghai)"
+// into "Resets 6am (Asia/Shanghai)".
+func cleanResetTime(raw string) string {
+	m := resetTimePattern.FindStringSubmatch(raw)
+	if m == nil {
+		return strings.TrimSpace(raw)
+	}
+	timeStr := strings.TrimSpace(m[1])
+	tz := strings.TrimSpace(m[2])
+
+	// Fix truncated am/pm: "6m" → "6am", "7:59p" → "7:59pm", "8p" → "8pm"
+	// The TUI sometimes eats the 'a' from 'am' or 'p' from 'pm'
+	if matched, _ := regexp.MatchString(`(?i)\d+[:.]*\d*[ap]$`, timeStr); matched {
+		timeStr += "m"
+	} else if matched, _ := regexp.MatchString(`(?i)\d+[:.]*\d*m$`, timeStr); matched {
+		// Could be "6m" (missing 'a') — check if it looks like a bare hour+m
+		if matched2, _ := regexp.MatchString(`(?i)^\d{1,2}m$`, timeStr); matched2 {
+			// "6m" → "6am" (most likely; reset times are typically am)
+			timeStr = timeStr[:len(timeStr)-1] + "am"
+		}
+	}
+
+	return "Resets " + timeStr + " (" + tz + ")"
+}
 
 func parseUsage(text string) *UsageResult {
 	result := &UsageResult{}
@@ -302,7 +331,7 @@ func parseUsage(text string) *UsageResult {
 		if loc != nil {
 			after := text[loc[1]:]
 			if rm := resetPattern.FindStringSubmatch(after); rm != nil {
-				entry.ResetsAt = strings.TrimSpace(rm[0])
+				entry.ResetsAt = cleanResetTime(rm[0])
 			}
 		}
 
