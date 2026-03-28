@@ -62,12 +62,18 @@ type RequestLog struct {
 	Stream                   bool    `json:"stream"`
 }
 
-// AccountProfile holds identity info read from .claude.json oauthAccount.
+// AccountProfile holds identity info read from .claude.json and .credentials.json.
 type AccountProfile struct {
-	DisplayName      string `json:"displayName"`
-	EmailAddress     string `json:"emailAddress"`
-	OrganizationName string `json:"organizationName,omitempty"`
-	BillingType      string `json:"billingType,omitempty"`
+	DisplayName           string `json:"displayName"`
+	EmailAddress          string `json:"emailAddress"`
+	OrganizationName      string `json:"organizationName,omitempty"`
+	OrganizationRole      string `json:"organizationRole,omitempty"`
+	BillingType           string `json:"billingType,omitempty"`
+	SubscriptionType      string `json:"subscriptionType,omitempty"`      // e.g. "max", "pro"
+	RateLimitTier         string `json:"rateLimitTier,omitempty"`         // e.g. "default_claude_max_5x"
+	AccountCreatedAt      string `json:"accountCreatedAt,omitempty"`      // ISO 8601
+	SubscriptionCreatedAt string `json:"subscriptionCreatedAt,omitempty"` // ISO 8601
+	TokenExpiresAt        int64  `json:"tokenExpiresAt,omitempty"`        // Unix ms
 }
 
 type Account struct {
@@ -169,20 +175,51 @@ func discoverAccounts(dir string) []string {
 	return names
 }
 
-// loadAccountProfile reads .claude.json and extracts oauthAccount info.
+// loadAccountProfile reads .claude.json (oauthAccount) and .credentials.json (subscription info).
 func loadAccountProfile(accountsDir, name string) *AccountProfile {
-	path := filepath.Join(accountsDir, name, ".claude.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
+	profile := &AccountProfile{}
+	hasData := false
+
+	// Read .claude.json for oauthAccount
+	if raw, err := os.ReadFile(filepath.Join(accountsDir, name, ".claude.json")); err == nil {
+		var data struct {
+			OAuthAccount *AccountProfile `json:"oauthAccount"`
+		}
+		if json.Unmarshal(raw, &data) == nil && data.OAuthAccount != nil {
+			profile = data.OAuthAccount
+			hasData = true
+		}
+	}
+
+	// Read .credentials.json for subscription type, rate limit tier, and token expiry
+	if raw, err := os.ReadFile(filepath.Join(accountsDir, name, ".credentials.json")); err == nil {
+		var creds struct {
+			ClaudeAiOauth struct {
+				SubscriptionType string `json:"subscriptionType"`
+				RateLimitTier    string `json:"rateLimitTier"`
+				ExpiresAt        int64  `json:"expiresAt"`
+			} `json:"claudeAiOauth"`
+		}
+		if json.Unmarshal(raw, &creds) == nil {
+			if creds.ClaudeAiOauth.SubscriptionType != "" {
+				profile.SubscriptionType = creds.ClaudeAiOauth.SubscriptionType
+				hasData = true
+			}
+			if creds.ClaudeAiOauth.RateLimitTier != "" {
+				profile.RateLimitTier = creds.ClaudeAiOauth.RateLimitTier
+				hasData = true
+			}
+			if creds.ClaudeAiOauth.ExpiresAt > 0 {
+				profile.TokenExpiresAt = creds.ClaudeAiOauth.ExpiresAt
+				hasData = true
+			}
+		}
+	}
+
+	if !hasData {
 		return nil
 	}
-	var data struct {
-		OAuthAccount *AccountProfile `json:"oauthAccount"`
-	}
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return nil
-	}
-	return data.OAuthAccount
+	return profile
 }
 
 func (p *AccountPool) Acquire(ctx context.Context) (*Slot, error) {

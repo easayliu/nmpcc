@@ -683,8 +683,8 @@ function accountCard(acc) {
     + '<div class="flex items-center gap-3.5">'
     + '<div class="w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-bold tracking-tight shadow-sm" style="background:hsl(' + hue + ',40%,92%);color:hsl(' + hue + ',50%,35%)">' + initials + '</div>'
     + '<div>'
-    + '<p class="text-[13px] font-semibold text-fg">' + esc(acc.name) + (acc.profile && acc.profile.displayName ? ' <span class="text-fg-faint font-normal">(' + esc(acc.profile.displayName) + ')</span>' : '') + '</p>'
-    + (acc.profile && acc.profile.emailAddress ? '<p class="text-[10px] text-fg-faint font-medium">' + esc(acc.profile.emailAddress) + (acc.profile.billingType ? ' &middot; ' + esc(formatBillingType(acc.profile.billingType)) : '') + '</p>' : '')
+    + '<p class="text-[13px] font-semibold text-fg">' + esc(acc.name) + (acc.profile && acc.profile.displayName ? ' <span class="text-fg-faint font-normal">(' + esc(acc.profile.displayName) + ')</span>' : '') + (acc.profile ? (function(p){ var plan = formatPlanName(p); return plan ? ' <span class="text-[10px] text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/40 px-1.5 py-0.5 rounded-md font-medium">' + esc(plan) + '</span>' : ''; })(acc.profile) : '') + '</p>'
+    + (acc.profile && acc.profile.emailAddress ? '<p class="text-[10px] text-fg-faint font-medium">' + esc(acc.profile.emailAddress) + '</p>' : '')
     + '<p class="text-[11px] text-fg-faint tabular-nums font-medium">' + acc.requestCount + ' req' + (acc.requestCount !== 1 ? 's' : '') + (acc.usage ? ' &middot; $' + acc.usage.totalCostUsd.toFixed(4) : '') + (acc.proxy ? ' &middot; <span class="text-blue-500" title="' + escAttr(acc.proxy) + '">proxy</span>' : '') + '</p>'
     + '</div></div>'
     + '<div class="flex items-center gap-3">'
@@ -1095,6 +1095,20 @@ function formatBillingType(bt) {
   return bt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function formatPlanName(profile) {
+  if (!profile) return '';
+  // Derive readable plan name from rateLimitTier or subscriptionType
+  var tier = profile.rateLimitTier || '';
+  var sub = profile.subscriptionType || '';
+  // e.g. "default_claude_max_5x" → "Max 5x"
+  var m = tier.match(/max[_\s]*(\d+x)/i);
+  if (m) return 'Max ' + m[1].toUpperCase();
+  if (sub === 'max') return 'Max';
+  if (sub === 'pro') return 'Pro';
+  if (sub) return sub.charAt(0).toUpperCase() + sub.slice(1);
+  return '';
+}
+
 function formatResetTime(ts) {
   if (!ts) return '';
   const diff = ts - Math.floor(Date.now() / 1000);
@@ -1125,12 +1139,25 @@ async function showAccountDetail(name) {
     const profile = acc?.profile;
     let profileSection = '';
     if (profile) {
+      var planName = formatPlanName(profile);
+      var tokenExpiry = '';
+      if (profile.tokenExpiresAt) {
+        var expDate = new Date(profile.tokenExpiresAt);
+        var isExpired = expDate < new Date();
+        tokenExpiry = isExpired
+          ? '<span class="text-red-500 font-medium">Expired ' + expDate.toLocaleString() + '</span>'
+          : '<span class="text-emerald-600 dark:text-emerald-400">' + expDate.toLocaleString() + '</span>';
+      }
       profileSection = '<div class="space-y-1">'
         + '<p class="text-[10px] text-fg-faint uppercase tracking-wider font-semibold mb-2">Account Info</p>'
         + (profile.displayName ? detailRow('Name', esc(profile.displayName)) : '')
         + (profile.emailAddress ? detailRow('Email', esc(profile.emailAddress)) : '')
-        + (profile.billingType ? detailRow('Plan', esc(formatBillingType(profile.billingType))) : '')
-        + (profile.organizationName ? detailRow('Organization', esc(profile.organizationName)) : '')
+        + (planName ? detailRow('Subscription', '<span class="text-purple-600 dark:text-purple-400 font-medium">' + esc(planName) + '</span>') : '')
+        + (profile.rateLimitTier ? detailRow('Rate Limit Tier', esc(profile.rateLimitTier)) : '')
+        + (profile.organizationName ? detailRow('Organization', esc(profile.organizationName) + (profile.organizationRole ? ' <span class="text-fg-faint">(' + esc(profile.organizationRole) + ')</span>' : '')) : '')
+        + (profile.accountCreatedAt ? detailRow('Account Created', new Date(profile.accountCreatedAt).toLocaleDateString()) : '')
+        + (profile.subscriptionCreatedAt ? detailRow('Subscribed Since', new Date(profile.subscriptionCreatedAt).toLocaleDateString()) : '')
+        + (tokenExpiry ? detailRow('Token Expires', tokenExpiry) : '')
         + '</div>';
     }
 
