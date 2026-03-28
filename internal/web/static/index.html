@@ -190,16 +190,16 @@
     </div>
     <div class="flex items-center gap-2.5">
       <!-- Auto-refresh indicator -->
-<input id="apiKeyInput" type="password" placeholder="API Key"
-        class="w-36 text-[11px] bg-surface-1 border border-border-subtle rounded-lg px-2.5 py-1.5 text-fg-muted
-               focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/10 placeholder-fg-faint transition-all">
-      <button onclick="toggleTheme()" title="Toggle theme"
+<button onclick="toggleTheme()" title="Toggle theme"
         class="w-7 h-7 rounded-lg border border-border-subtle flex items-center justify-center text-fg-faint hover:text-fg hover:border-border transition-colors">
         <svg id="themeIconSun" class="w-3.5 h-3.5 hidden" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
         </svg>
-        <svg id="themeIconMoon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+        <svg id="themeIconMoon" class="w-3.5 h-3.5 hidden" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
           <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+        <svg id="themeIconSystem" class="w-3.5 h-3.5 hidden" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
         </svg>
       </button>
       <button onclick="loadAll()" title="Refresh"
@@ -307,28 +307,55 @@
 
 <script>
 // ── Theme ──
-const savedTheme = localStorage.getItem('nmpcc_theme') || 'light';
-applyTheme(savedTheme);
+// Theme: 'light', 'dark', or 'system' (follow OS)
+function getEffectiveTheme(pref) {
+  if (pref === 'system' || !pref) {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return pref;
+}
 
-function applyTheme(theme) {
-  if (theme === 'dark') {
+function applyTheme(pref) {
+  var effective = getEffectiveTheme(pref);
+  if (effective === 'dark') {
     document.documentElement.classList.add('dark');
   } else {
     document.documentElement.classList.remove('dark');
   }
-  const sun = document.getElementById('themeIconSun');
-  const moon = document.getElementById('themeIconMoon');
-  if (sun && moon) {
-    sun.classList.toggle('hidden', theme !== 'dark');
-    moon.classList.toggle('hidden', theme === 'dark');
+  var sun = document.getElementById('themeIconSun');
+  var moon = document.getElementById('themeIconMoon');
+  var sys = document.getElementById('themeIconSystem');
+  if (sun && moon && sys) {
+    sun.classList.add('hidden');
+    moon.classList.add('hidden');
+    sys.classList.add('hidden');
+    if (pref === 'system' || !pref) {
+      sys.classList.remove('hidden');
+    } else if (effective === 'dark') {
+      sun.classList.remove('hidden');
+    } else {
+      moon.classList.remove('hidden');
+    }
   }
 }
 
+var currentThemePref = localStorage.getItem('nmpcc_theme') || 'system';
+applyTheme(currentThemePref);
+
+// Listen for OS theme changes when in system mode
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+  if (currentThemePref === 'system') {
+    applyTheme('system');
+  }
+});
+
 function toggleTheme() {
-  const isDark = document.documentElement.classList.contains('dark');
-  const next = isDark ? 'light' : 'dark';
-  localStorage.setItem('nmpcc_theme', next);
-  applyTheme(next);
+  // Cycle: system → light → dark → system
+  var order = ['system', 'light', 'dark'];
+  var idx = order.indexOf(currentThemePref);
+  currentThemePref = order[(idx + 1) % order.length];
+  localStorage.setItem('nmpcc_theme', currentThemePref);
+  applyTheme(currentThemePref);
 }
 
 // ── Mobile sidebar ──
@@ -342,14 +369,6 @@ let currentPage = 'overview';
 let cachedDashboard = null;
 let cachedAccounts = [];
 let lastRefreshTime = 0;
-
-const $apiKey = document.getElementById('apiKeyInput');
-$apiKey.value = apiKey;
-$apiKey.addEventListener('change', () => {
-  apiKey = $apiKey.value;
-  localStorage.setItem('nmpcc_api_key', apiKey);
-  loadAll();
-});
 
 // ── API ──
 async function api(method, path, body) {
@@ -799,7 +818,7 @@ async function renderSettings($el) {
   try {
     settings = await api('GET', '/api/settings');
   } catch {
-    settings = { maxConcurrency: 1, maxTurns: 10, globalProxy: '' };
+    settings = { maxConcurrency: 1, maxTurns: 10, globalProxy: '', apiKeyCount: 0 };
   }
 
   $el.innerHTML = '<div class="p-6 lg:p-8 max-w-2xl page-enter">'
@@ -814,9 +833,15 @@ async function renderSettings($el) {
         'Maximum tool-use turns per CLI request. Set to 1 for pure proxy mode.')
     + proxySettingRow('Global Proxy', settings.globalProxy || '',
         'Applied to all accounts without a per-account proxy. Supports socks5:// and http:// protocols.')
+    + apiKeysSection(settings.apiKeyCount || 0)
     + '</div>'
     + '<div id="settingsSaveStatus" class="mt-4 text-[11px] text-fg-faint"></div>'
     + '</div>';
+
+  // Load API keys list after DOM is ready
+  if (settings.apiKeyCount > 0) {
+    loadApiKeys();
+  }
 }
 
 function settingRow(label, key, value, description) {
@@ -907,6 +932,143 @@ async function saveGlobalProxy() {
     btn.disabled = false;
     if ($status) {
       $status.textContent = 'Failed to save: ' + e.message;
+      $status.className = 'mt-4 text-[11px] text-red-600 dark:text-red-400';
+    }
+  }
+}
+
+function apiKeysSection(keyCount) {
+  return '<div class="bg-surface-1 border border-border rounded-xl px-5 py-4">'
+    + '<div class="flex items-center justify-between mb-3">'
+    + '<div>'
+    + '<p class="text-[12px] font-semibold text-fg">API Keys</p>'
+    + '<p class="text-[11px] text-fg-faint mt-0.5">Keys for /v1/* endpoint authentication. No keys = open access.</p>'
+    + '</div>'
+    + '<button onclick="generateApiKey()" id="genApiKeyBtn"'
+    + ' class="text-[12px] bg-accent text-white hover:opacity-90 px-3 py-2 rounded-lg font-semibold transition-opacity shrink-0 flex items-center gap-1.5">'
+    + '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>'
+    + 'Generate</button>'
+    + '</div>'
+    + '<div id="apiKeysList" class="space-y-2">'
+    + (keyCount === 0
+      ? '<p class="text-[11px] text-fg-faint py-2">No API keys configured. API endpoints are open.</p>'
+      : '<div class="flex justify-center py-3"><div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full spin"></div></div>')
+    + '</div>'
+    + '<div id="newKeyBanner" class="hidden mt-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 rounded-lg p-3">'
+    + '<p class="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium mb-1">New key generated — copy it now, it won\'t be shown again:</p>'
+    + '<div class="flex items-center gap-2">'
+    + '<code id="newKeyValue" class="flex-1 text-[11px] font-mono text-emerald-800 dark:text-emerald-200 bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1.5 rounded select-all break-all"></code>'
+    + '<button onclick="copyNewKey()" id="copyKeyBtn" class="text-[11px] border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 px-2.5 py-1.5 rounded-lg font-medium shrink-0 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors">Copy</button>'
+    + '<button onclick="useNewKey()" class="text-[11px] border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 px-2.5 py-1.5 rounded-lg font-medium shrink-0 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors">Use</button>'
+    + '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+async function loadApiKeys() {
+  var $list = document.getElementById('apiKeysList');
+  if (!$list) return;
+
+  try {
+    var data = await api('GET', '/api/apikey');
+    var keys = data.keys || [];
+    if (keys.length === 0) {
+      $list.innerHTML = '<p class="text-[11px] text-fg-faint py-2">No API keys configured. API endpoints are open.</p>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      html += '<div class="flex items-center justify-between bg-surface-0 border border-border-subtle rounded-lg px-3 py-2 group">'
+        + '<div class="flex items-center gap-2.5 min-w-0">'
+        + '<svg class="w-3.5 h-3.5 text-fg-faint shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>'
+        + '<code class="text-[11px] font-mono text-fg-muted truncate">' + esc(k.masked) + '</code>'
+        + '</div>'
+        + '<button onclick="deleteApiKey(\'' + escAttr(k.id) + '\')"'
+        + ' class="text-[11px] text-fg-faint hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"'
+        + ' title="Delete this key">'
+        + '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'
+        + '</button>'
+        + '</div>';
+    }
+    $list.innerHTML = html;
+  } catch (e) {
+    $list.innerHTML = '<p class="text-[11px] text-red-500">Failed to load keys</p>';
+  }
+}
+
+async function generateApiKey() {
+  var btn = document.getElementById('genApiKeyBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = '<div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full spin"></div> Generating...';
+
+  try {
+    var data = await api('POST', '/api/apikey');
+    var newKey = data.key;
+
+    // Show the new key banner
+    var banner = document.getElementById('newKeyBanner');
+    var keyEl = document.getElementById('newKeyValue');
+    if (banner && keyEl) {
+      keyEl.textContent = newKey;
+      banner.dataset.key = newKey;
+      banner.classList.remove('hidden');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg> Generate';
+    await loadApiKeys();
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg> Generate';
+    var $status = document.getElementById('settingsSaveStatus');
+    if ($status) {
+      $status.textContent = 'Failed to generate key: ' + e.message;
+      $status.className = 'mt-4 text-[11px] text-red-600 dark:text-red-400';
+    }
+  }
+}
+
+function copyNewKey() {
+  var keyEl = document.getElementById('newKeyValue');
+  var btn = document.getElementById('copyKeyBtn');
+  if (!keyEl) return;
+  navigator.clipboard.writeText(keyEl.textContent).then(function() {
+    if (btn) { btn.textContent = 'Copied!'; setTimeout(function() { btn.textContent = 'Copy'; }, 1500); }
+  });
+}
+
+function useNewKey() {
+  var banner = document.getElementById('newKeyBanner');
+  var key = banner ? banner.dataset.key : '';
+  if (!key) return;
+  apiKey = key;
+  localStorage.setItem('nmpcc_api_key', apiKey);
+  var $status = document.getElementById('settingsSaveStatus');
+  if ($status) {
+    $status.textContent = 'Key applied to your local session.';
+    $status.className = 'mt-4 text-[11px] text-emerald-600 dark:text-emerald-400';
+    setTimeout(function() { $status.textContent = ''; $status.className = 'mt-4 text-[11px] text-fg-faint'; }, 2000);
+  }
+}
+
+async function deleteApiKey(keyId) {
+  if (!confirm('Delete this API key? Clients using it will lose access.')) return;
+
+  try {
+    await api('DELETE', '/api/apikey', { key: keyId });
+    await loadApiKeys();
+    var $status = document.getElementById('settingsSaveStatus');
+    if ($status) {
+      $status.textContent = 'API key deleted.';
+      $status.className = 'mt-4 text-[11px] text-emerald-600 dark:text-emerald-400';
+      setTimeout(function() { $status.textContent = ''; $status.className = 'mt-4 text-[11px] text-fg-faint'; }, 2000);
+    }
+  } catch (e) {
+    var $status = document.getElementById('settingsSaveStatus');
+    if ($status) {
+      $status.textContent = 'Failed to delete key: ' + e.message;
       $status.className = 'mt-4 text-[11px] text-red-600 dark:text-red-400';
     }
   }

@@ -12,12 +12,12 @@ import (
 )
 
 type Config struct {
-	Port          int
-	ServiceAPIKey string
-	WebPassword   string
-	Accounts      []string
-	AccountsDir   string
-	SandboxDir    string
+	Port           int
+	ServiceAPIKeys []string // Multiple API keys for authentication
+	WebPassword    string
+	Accounts       []string
+	AccountsDir    string
+	SandboxDir     string
 	MaxTurns       int
 	MaxConcurrency int
 	Timeout        time.Duration
@@ -34,12 +34,13 @@ type RuntimeSettings struct {
 	AccountConcurrency map[string]int    `json:"accountConcurrency,omitempty"`
 	GlobalProxy        string            `json:"globalProxy"`
 	AccountProxy       map[string]string `json:"accountProxy,omitempty"`
+	ServiceAPIKeys     []string          `json:"serviceApiKeys,omitempty"`
 }
 
 func Load() *Config {
 	cfg := &Config{
 		Port:          getInt("PORT", 3000),
-		ServiceAPIKey: getStr("SERVICE_API_KEY", ""),
+		ServiceAPIKeys: loadAPIKeys(),
 		WebPassword:   getStr("WEB_PASSWORD", ""),
 		Accounts:      getList("ACCOUNTS"),
 		AccountsDir:   getStr("ACCOUNTS_DIR", "/accounts"),
@@ -60,6 +61,9 @@ func Load() *Config {
 		}
 		// GlobalProxy always takes from runtime (including empty = explicitly cleared)
 		cfg.GlobalProxy = rs.GlobalProxy
+		if len(rs.ServiceAPIKeys) > 0 {
+			cfg.ServiceAPIKeys = rs.ServiceAPIKeys
+		}
 	}
 	return cfg
 }
@@ -112,6 +116,25 @@ func getInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// loadAPIKeys merges SERVICE_API_KEY (single, legacy) and SERVICE_API_KEYS (comma-separated).
+func loadAPIKeys() []string {
+	keys := getList("SERVICE_API_KEYS")
+	if single := getStr("SERVICE_API_KEY", ""); single != "" {
+		// Avoid duplicates
+		found := false
+		for _, k := range keys {
+			if k == single {
+				found = true
+				break
+			}
+		}
+		if !found {
+			keys = append(keys, single)
+		}
+	}
+	return keys
 }
 
 func getList(key string) []string {

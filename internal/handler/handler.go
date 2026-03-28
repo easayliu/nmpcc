@@ -112,6 +112,7 @@ func New(p *pool.AccountPool, cfg *config.Config) *Handler {
 	h.mux.HandleFunc("/api/accounts/concurrency", h.handleAccountConcurrency)
 	h.mux.HandleFunc("/api/accounts/proxy", h.handleAccountProxy)
 	h.mux.HandleFunc("/api/proxy", h.handleGlobalProxy)
+	h.mux.HandleFunc("/api/apikey", h.handleAPIKey)
 	h.mux.HandleFunc("/status", h.handleStatus)
 	h.mux.Handle("/", h.webAuthMiddleware(web.Handler()))
 	return h
@@ -418,6 +419,7 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"maxConcurrency": h.cfg.MaxConcurrency,
 			"maxTurns":       h.cfg.MaxTurns,
 			"globalProxy":    h.cfg.GlobalProxy,
+			"apiKeyCount":    len(h.cfg.ServiceAPIKeys),
 		})
 	case http.MethodPut:
 		var body struct {
@@ -542,6 +544,68 @@ func (h *Handler) handleGlobalProxy(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) handleAPIKey(w http.ResponseWriter, r *http.Request) {
+	if !h.authenticateWebOrAPI(r) {
+		sendError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		// Return masked keys list
+		masked := make([]map[string]string, len(h.cfg.ServiceAPIKeys))
+		for i, k := range h.cfg.ServiceAPIKeys {
+			m := "****"
+			if len(k) > 8 {
+				m = k[:4] + "..." + k[len(k)-4:]
+			} else if len(k) > 4 {
+				m = k[:4] + "****"
+			}
+			masked[i] = map[string]string{"id": k, "masked": m}
+		}
+		sendJSON(w, http.StatusOK, map[string]any{"keys": masked})
+
+	case http.MethodPost:
+		// Generate a new random key
+		b := make([]byte, 24)
+		rand.Read(b)
+		newKey := "sk-" + hex.EncodeToString(b)
+		h.cfg.ServiceAPIKeys = append(h.cfg.ServiceAPIKeys, newKey)
+		log.Printf("[settings] new API key generated (total=%d)", len(h.cfg.ServiceAPIKeys))
+		h.saveRuntimeSettings()
+		sendJSON(w, http.StatusOK, map[string]any{"key": newKey})
+
+	case http.MethodDelete:
+		var body struct {
+			Key string `json:"key"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			sendError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+		found := false
+		filtered := make([]string, 0, len(h.cfg.ServiceAPIKeys))
+		for _, k := range h.cfg.ServiceAPIKeys {
+			if k == body.Key {
+				found = true
+				continue
+			}
+			filtered = append(filtered, k)
+		}
+		if !found {
+			sendError(w, http.StatusNotFound, "Key not found")
+			return
+		}
+		h.cfg.ServiceAPIKeys = filtered
+		log.Printf("[settings] API key deleted (total=%d)", len(h.cfg.ServiceAPIKeys))
+		h.saveRuntimeSettings()
+		sendJSON(w, http.StatusOK, map[string]any{"ok": true})
+
+	default:
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
 // saveRuntimeSettings persists current global + per-account settings to disk.
 func (h *Handler) saveRuntimeSettings() {
 	rs := &config.RuntimeSettings{
@@ -550,6 +614,7 @@ func (h *Handler) saveRuntimeSettings() {
 		AccountConcurrency: h.pool.GetAccountConcurrency(),
 		GlobalProxy:        h.cfg.GlobalProxy,
 		AccountProxy:       h.pool.GetAccountProxy(),
+		ServiceAPIKeys:     h.cfg.ServiceAPIKeys,
 	}
 	h.cfg.SaveRuntime(rs)
 }
@@ -685,15 +750,16 @@ func (h *Handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 // ── Auth ──
 
 func (h *Handler) authenticate(r *http.Request) bool {
-	key := h.cfg.ServiceAPIKey
-	if key == "" {
+	keys := h.cfg.ServiceAPIKeys
+	if len(keys) == 0 {
 		return true
 	}
-	if r.Header.Get("Authorization") == "Bearer "+key {
-		return true
-	}
-	if r.Header.Get("X-Api-Key") == key {
-		return true
+	auth := r.Header.Get("Authorization")
+	xKey := r.Header.Get("X-Api-Key")
+	for _, k := range keys {
+		if auth == "Bearer "+k || xKey == k {
+			return true
+		}
 	}
 	return false
 }
