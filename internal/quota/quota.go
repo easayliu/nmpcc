@@ -283,7 +283,7 @@ var usagePatterns = []struct {
 	{"Current week (Sonnet only)", regexp.MustCompile(`(?i)C\s*u\s*r\s*r\s*e\s*n?\s*t?\s*w\s*e\s*e\s*k\s*\(?\s*S\s*o\s*n\s*n?\s*e?\s*t?\s*o\s*n\s*l\s*y\s*\)?\s+(\d+)\s*%\s*u\s*s\s*e\s*d`)},
 }
 
-var resetPattern = regexp.MustCompile(`(?i)R\s*e\s*s\s*e?\s*t?\s*s?\s+([\w\s,:.]+?\([\w/]+\))`)
+var resetPattern = regexp.MustCompile(`(?i)R\s*e\s*s\s*e?\s*t?\s*s?\s*([\w\s,:.]*?\(\s*[\w/]+\s*\))`)
 var extraUsagePattern = regexp.MustCompile(`(?i)E\s*x\s*t\s*r\s*a\s*u\s*s\s*a\s*g\s*e\s*(n\s*o\s*t\s*e\s*n\s*a\s*b\s*l\s*e\s*d|e\s*n\s*a\s*b\s*l\s*e\s*d)`)
 
 func parseUsage(text string) *UsageResult {
