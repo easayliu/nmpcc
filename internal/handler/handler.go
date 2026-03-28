@@ -110,6 +110,8 @@ func New(p *pool.AccountPool, cfg *config.Config) *Handler {
 	h.mux.HandleFunc("/api/web-auth", h.handleWebAuth)
 	h.mux.HandleFunc("/api/settings", h.handleSettings)
 	h.mux.HandleFunc("/api/accounts/concurrency", h.handleAccountConcurrency)
+	h.mux.HandleFunc("/api/accounts/proxy", h.handleAccountProxy)
+	h.mux.HandleFunc("/api/proxy", h.handleGlobalProxy)
 	h.mux.HandleFunc("/status", h.handleStatus)
 	h.mux.Handle("/", h.webAuthMiddleware(web.Handler()))
 	return h
@@ -213,8 +215,9 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 	defer slot.Release()
 
 	acc := slot.Account
+	opts.Proxy = h.pool.GetEffectiveProxy(acc.Name)
 	start := time.Now()
-	log.Printf("[req] account=%s model=%s stream=%v session=%s", acc.Name, body.Model, body.Stream, downstreamSessionID)
+	log.Printf("[req] account=%s model=%s stream=%v session=%s proxy=%q", acc.Name, body.Model, body.Stream, downstreamSessionID, opts.Proxy)
 
 	var result *executor.Result
 	if body.Stream {
@@ -414,6 +417,7 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, http.StatusOK, map[string]any{
 			"maxConcurrency": h.cfg.MaxConcurrency,
 			"maxTurns":       h.cfg.MaxTurns,
+			"globalProxy":    h.cfg.GlobalProxy,
 		})
 	case http.MethodPut:
 		var body struct {
@@ -477,12 +481,75 @@ func (h *Handler) handleAccountConcurrency(w http.ResponseWriter, r *http.Reques
 	sendJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func (h *Handler) handleAccountProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	if !h.authenticateWebOrAPI(r) {
+		sendError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var body struct {
+		Account string `json:"account"`
+		Proxy   string `json:"proxy"` // empty string to clear (use global)
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if body.Account == "" {
+		sendError(w, http.StatusBadRequest, "account is required")
+		return
+	}
+
+	if !h.pool.SetProxy(body.Account, body.Proxy) {
+		sendError(w, http.StatusNotFound, "Account not found")
+		return
+	}
+	h.saveRuntimeSettings()
+	sendJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *Handler) handleGlobalProxy(w http.ResponseWriter, r *http.Request) {
+	if !h.authenticateWebOrAPI(r) {
+		sendError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		sendJSON(w, http.StatusOK, map[string]any{
+			"globalProxy": h.cfg.GlobalProxy,
+		})
+	case http.MethodPut:
+		var body struct {
+			Proxy string `json:"proxy"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			sendError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+		h.cfg.GlobalProxy = body.Proxy
+		log.Printf("[settings] globalProxy set to %q", h.cfg.GlobalProxy)
+		h.saveRuntimeSettings()
+		sendJSON(w, http.StatusOK, map[string]any{
+			"globalProxy": h.cfg.GlobalProxy,
+		})
+	default:
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
 // saveRuntimeSettings persists current global + per-account settings to disk.
 func (h *Handler) saveRuntimeSettings() {
 	rs := &config.RuntimeSettings{
 		MaxConcurrency:     h.cfg.MaxConcurrency,
 		MaxTurns:           h.cfg.MaxTurns,
 		AccountConcurrency: h.pool.GetAccountConcurrency(),
+		GlobalProxy:        h.cfg.GlobalProxy,
+		AccountProxy:       h.pool.GetAccountProxy(),
 	}
 	h.cfg.SaveRuntime(rs)
 }
@@ -506,7 +573,9 @@ func (h *Handler) handleRefreshQuota(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send a minimal prompt to trigger rate_limit_event
-	opts := executor.Options{}
+	opts := executor.Options{
+		Proxy: h.pool.GetEffectiveProxy(account),
+	}
 	result, err := executor.Execute(r.Context(), h.cfg, account, "hi", opts, nil)
 	if err != nil {
 		sendError(w, http.StatusInternalServerError, "Failed to refresh quota: "+err.Error())
@@ -548,7 +617,7 @@ func (h *Handler) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := quota.FetchUsage(h.cfg.AccountsDir, account)
+	result, err := quota.FetchUsage(h.cfg.AccountsDir, account, h.pool.GetEffectiveProxy(account))
 	if err != nil {
 		sendError(w, http.StatusInternalServerError, "Failed to fetch usage: "+err.Error())
 		return

@@ -98,7 +98,8 @@ func trustProject(configDir, projectDir string) {
 }
 
 // FetchUsage runs an interactive claude session, sends /usage, and parses the output.
-func FetchUsage(accountsDir, accountName string) (*UsageResult, error) {
+// proxy is optional; if non-empty, it's set as HTTP_PROXY/HTTPS_PROXY/ALL_PROXY on the process.
+func FetchUsage(accountsDir, accountName, proxy string) (*UsageResult, error) {
 	configDir := filepath.Join(accountsDir, accountName)
 	ensureOnboarded(configDir)
 
@@ -115,6 +116,17 @@ func FetchUsage(accountsDir, accountName string) (*UsageResult, error) {
 	cmd := exec.Command("claude")
 	cmd.Dir = realSandbox
 	cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+configDir)
+
+	if proxy != "" {
+		cmd.Env = append(cmd.Env,
+			"HTTP_PROXY="+proxy,
+			"HTTPS_PROXY="+proxy,
+			"http_proxy="+proxy,
+			"https_proxy="+proxy,
+			"ALL_PROXY="+proxy,
+			"all_proxy="+proxy,
+		)
+	}
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {

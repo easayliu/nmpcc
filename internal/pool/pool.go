@@ -68,6 +68,7 @@ type Account struct {
 	MaxConcurrency int            `json:"maxConcurrency"` // 0 means use global default
 	Healthy        bool           `json:"healthy"`
 	RequestCount   int64          `json:"requestCount"`
+	Proxy          string         `json:"proxy,omitempty"` // Per-account proxy (socks5://... or http://...), empty = use global
 	RateLimit      *RateLimitInfo `json:"rateLimit,omitempty"`
 	Usage          *UsageInfo     `json:"usage,omitempty"`
 	PlanUsage      *PlanUsage     `json:"planUsage,omitempty"`
@@ -106,10 +107,16 @@ func New(cfg *config.Config) *AccountPool {
 		names = discoverAccounts(cfg.AccountsDir)
 	}
 
-	// Load per-account concurrency from runtime settings
+	// Load per-account concurrency and proxy from runtime settings
 	var accConc map[string]int
-	if rs := cfg.LoadRuntime(); rs != nil && rs.AccountConcurrency != nil {
-		accConc = rs.AccountConcurrency
+	var accProxy map[string]string
+	if rs := cfg.LoadRuntime(); rs != nil {
+		if rs.AccountConcurrency != nil {
+			accConc = rs.AccountConcurrency
+		}
+		if rs.AccountProxy != nil {
+			accProxy = rs.AccountProxy
+		}
 	}
 
 	accounts := make([]*Account, len(names))
@@ -118,6 +125,7 @@ func New(cfg *config.Config) *AccountPool {
 			Name:           name,
 			Healthy:        true,
 			MaxConcurrency: accConc[name],
+			Proxy:          accProxy[name],
 		}
 	}
 	return &AccountPool{
@@ -282,6 +290,52 @@ func (p *AccountPool) SetMaxConcurrency(name string, max int) bool {
 	return false
 }
 
+// SetProxy sets the per-account proxy URL. Empty string means use global proxy.
+func (p *AccountPool) SetProxy(name, proxy string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, acc := range p.accounts {
+		if acc.Name == name {
+			acc.Proxy = proxy
+			log.Printf("[pool] account %s proxy set to %q", name, proxy)
+			return true
+		}
+	}
+	return false
+}
+
+// GetAccountProxy returns per-account proxy overrides (non-empty only).
+func (p *AccountPool) GetAccountProxy() map[string]string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	m := make(map[string]string)
+	for _, acc := range p.accounts {
+		if acc.Proxy != "" {
+			m[acc.Name] = acc.Proxy
+		}
+	}
+	return m
+}
+
+// GetEffectiveProxy returns the proxy URL to use for a given account.
+// Per-account proxy takes priority over global proxy.
+func (p *AccountPool) GetEffectiveProxy(name string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, acc := range p.accounts {
+		if acc.Name == name {
+			if acc.Proxy != "" {
+				return acc.Proxy
+			}
+			return p.cfg.GlobalProxy
+		}
+	}
+	return p.cfg.GlobalProxy
+}
+
 // GetAccountConcurrency returns per-account concurrency overrides (non-zero only).
 func (p *AccountPool) GetAccountConcurrency() map[string]int {
 	p.mu.Lock()
@@ -416,6 +470,7 @@ func (p *AccountPool) Status() []Account {
 			MaxConcurrency: a.effectiveMaxConcurrency(p.cfg.MaxConcurrency),
 			Healthy:        a.Healthy,
 			RequestCount:   a.RequestCount,
+			Proxy:          a.Proxy,
 			RateLimit:      a.RateLimit,
 			Usage:          a.Usage,
 			PlanUsage:      a.PlanUsage,

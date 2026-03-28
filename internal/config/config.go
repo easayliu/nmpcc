@@ -22,15 +22,18 @@ type Config struct {
 	MaxConcurrency int
 	Timeout        time.Duration
 	QueueTimeout   time.Duration
+	GlobalProxy    string // Global proxy URL (socks5://... or http://...)
 
 	mu sync.Mutex // protects runtime settings file writes
 }
 
 // RuntimeSettings is the persisted runtime config (not env vars).
 type RuntimeSettings struct {
-	MaxConcurrency     int            `json:"maxConcurrency,omitempty"`
-	MaxTurns           int            `json:"maxTurns,omitempty"`
-	AccountConcurrency map[string]int `json:"accountConcurrency,omitempty"`
+	MaxConcurrency     int               `json:"maxConcurrency,omitempty"`
+	MaxTurns           int               `json:"maxTurns,omitempty"`
+	AccountConcurrency map[string]int    `json:"accountConcurrency,omitempty"`
+	GlobalProxy        string            `json:"globalProxy"`
+	AccountProxy       map[string]string `json:"accountProxy,omitempty"`
 }
 
 func Load() *Config {
@@ -45,6 +48,7 @@ func Load() *Config {
 		MaxConcurrency: getInt("MAX_CONCURRENCY", 1),
 		Timeout:       time.Duration(getInt("TIMEOUT_MS", 300000)) * time.Millisecond,
 		QueueTimeout:  time.Duration(getInt("QUEUE_TIMEOUT_MS", 60000)) * time.Millisecond,
+		GlobalProxy:   getStr("GLOBAL_PROXY", ""),
 	}
 	// Override with persisted runtime settings
 	if rs := cfg.LoadRuntime(); rs != nil {
@@ -54,6 +58,8 @@ func Load() *Config {
 		if rs.MaxTurns > 0 {
 			cfg.MaxTurns = rs.MaxTurns
 		}
+		// GlobalProxy always takes from runtime (including empty = explicitly cleared)
+		cfg.GlobalProxy = rs.GlobalProxy
 	}
 	return cfg
 }

@@ -21,6 +21,7 @@ type Options struct {
 	Model        string
 	SystemPrompt string
 	SessionID    string // If set, resume this session instead of starting new
+	Proxy        string // Proxy URL (socks5://... or http://...), applied as env vars
 }
 
 type Result struct {
@@ -47,6 +48,18 @@ func Execute(ctx context.Context, cfg *config.Config, accountName, prompt string
 	cmd := exec.CommandContext(execCtx, "claude", args...)
 	cmd.Dir = sandboxPath
 	cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+configDir)
+
+	// Apply proxy environment variables
+	if opts.Proxy != "" {
+		cmd.Env = append(cmd.Env,
+			"HTTP_PROXY="+opts.Proxy,
+			"HTTPS_PROXY="+opts.Proxy,
+			"http_proxy="+opts.Proxy,
+			"https_proxy="+opts.Proxy,
+			"ALL_PROXY="+opts.Proxy,
+			"all_proxy="+opts.Proxy,
+		)
+	}
 
 	// Pass prompt via stdin to avoid "argument list too long" on large prompts
 	cmd.Stdin = strings.NewReader(prompt)

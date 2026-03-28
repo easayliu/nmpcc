@@ -665,7 +665,7 @@ function accountCard(acc) {
     + '<div class="w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-bold tracking-tight shadow-sm" style="background:hsl(' + hue + ',40%,92%);color:hsl(' + hue + ',50%,35%)">' + initials + '</div>'
     + '<div>'
     + '<p class="text-[13px] font-semibold text-fg">' + esc(acc.name) + '</p>'
-    + '<p class="text-[11px] text-fg-faint tabular-nums font-medium">' + acc.requestCount + ' req' + (acc.requestCount !== 1 ? 's' : '') + (acc.usage ? ' &middot; $' + acc.usage.totalCostUsd.toFixed(4) : '') + '</p>'
+    + '<p class="text-[11px] text-fg-faint tabular-nums font-medium">' + acc.requestCount + ' req' + (acc.requestCount !== 1 ? 's' : '') + (acc.usage ? ' &middot; $' + acc.usage.totalCostUsd.toFixed(4) : '') + (acc.proxy ? ' &middot; <span class="text-blue-500" title="' + escAttr(acc.proxy) + '">proxy</span>' : '') + '</p>'
     + '</div></div>'
     + '<div class="flex items-center gap-3">'
     + quotaBadge
@@ -799,7 +799,7 @@ async function renderSettings($el) {
   try {
     settings = await api('GET', '/api/settings');
   } catch {
-    settings = { maxConcurrency: 1, maxTurns: 10 };
+    settings = { maxConcurrency: 1, maxTurns: 10, globalProxy: '' };
   }
 
   $el.innerHTML = '<div class="p-6 lg:p-8 max-w-2xl page-enter">'
@@ -812,6 +812,8 @@ async function renderSettings($el) {
         'Maximum concurrent requests per account. Higher values increase throughput but may trigger rate limits.')
     + settingRow('Max Turns', 'maxTurns', settings.maxTurns,
         'Maximum tool-use turns per CLI request. Set to 1 for pure proxy mode.')
+    + proxySettingRow('Global Proxy', settings.globalProxy || '',
+        'Applied to all accounts without a per-account proxy. Supports socks5:// and http:// protocols.')
     + '</div>'
     + '<div id="settingsSaveStatus" class="mt-4 text-[11px] text-fg-faint"></div>'
     + '</div>';
@@ -862,6 +864,52 @@ async function adjustSetting(key, delta) {
 
 function label(key) {
   return { maxConcurrency: 'Max Concurrency', maxTurns: 'Max Turns' }[key] || key;
+}
+
+function proxySettingRow(label, value, description) {
+  return '<div class="bg-surface-1 border border-border rounded-xl px-5 py-4">'
+    + '<div class="flex items-center justify-between mb-2">'
+    + '<div>'
+    + '<p class="text-[12px] font-semibold text-fg">' + label + '</p>'
+    + '<p class="text-[11px] text-fg-faint mt-0.5">' + description + '</p>'
+    + '</div>'
+    + '</div>'
+    + '<div class="flex items-center gap-2">'
+    + '<input id="globalProxyInput" type="text" value="' + escAttr(value) + '" placeholder="socks5://127.0.0.1:1080 or http://host:port"'
+    + ' class="flex-1 text-[12px] bg-surface-0 border border-border-subtle rounded-lg px-3 py-2 text-fg font-mono'
+    + ' focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/10 placeholder-fg-faint transition-all">'
+    + '<button onclick="saveGlobalProxy()" id="saveProxyBtn"'
+    + ' class="text-[12px] bg-accent text-white hover:opacity-90 px-3 py-2 rounded-lg font-semibold transition-opacity shrink-0">Save</button>'
+    + '</div>'
+    + '</div>';
+}
+
+async function saveGlobalProxy() {
+  const input = document.getElementById('globalProxyInput');
+  const btn = document.getElementById('saveProxyBtn');
+  const $status = document.getElementById('settingsSaveStatus');
+  if (!input || !btn) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    await api('PUT', '/api/proxy', { proxy: input.value.trim() });
+    btn.textContent = 'Save';
+    btn.disabled = false;
+    if ($status) {
+      $status.textContent = 'Global proxy updated';
+      $status.className = 'mt-4 text-[11px] text-emerald-600 dark:text-emerald-400';
+      setTimeout(() => { $status.textContent = ''; $status.className = 'mt-4 text-[11px] text-fg-faint'; }, 2000);
+    }
+  } catch (e) {
+    btn.textContent = 'Save';
+    btn.disabled = false;
+    if ($status) {
+      $status.textContent = 'Failed to save: ' + e.message;
+      $status.className = 'mt-4 text-[11px] text-red-600 dark:text-red-400';
+    }
+  }
 }
 
 function hashCode(str) {
@@ -971,6 +1019,22 @@ async function showAccountDetail(name) {
       + '</div>'
       + '</div></div>';
 
+    // Per-account proxy control
+    var proxySection = '<div class="mt-3 pt-3 border-t border-border">'
+      + '<div class="mb-2">'
+      + '<p class="text-[11px] text-fg-muted font-medium">Proxy</p>'
+      + '<p class="text-[10px] text-fg-faint">Leave empty to use global proxy</p>'
+      + '</div>'
+      + '<div class="flex items-center gap-2">'
+      + '<input id="accProxy_' + esc(name) + '" type="text" value="' + escAttr(acc.proxy || '') + '" placeholder="socks5://... or http://..."'
+      + ' class="flex-1 text-[11px] bg-surface-0 border border-border-subtle rounded-lg px-2.5 py-1.5 text-fg font-mono'
+      + ' focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/10 placeholder-fg-faint transition-all">'
+      + '<button onclick="saveAccountProxy(\'' + esc(name) + '\')" id="accProxySaveBtn_' + esc(name) + '"'
+      + ' class="text-[11px] border border-border text-fg-muted hover:text-fg hover:bg-surface-2 px-2.5 py-1.5 rounded-lg font-medium transition-colors shrink-0">Save</button>'
+      + '</div>'
+      + '<div id="accProxyStatus_' + esc(name) + '" class="mt-1 text-[10px] text-fg-faint"></div>'
+      + '</div>';
+
     $body.innerHTML = '<div class="space-y-1 fade-in">'
       + detailRow('Status', acc && acc.healthy
         ? '<span class="text-emerald-600 dark:text-emerald-400 font-medium">Healthy</span>'
@@ -978,6 +1042,7 @@ async function showAccountDetail(name) {
       + (acc ? detailRow('Requests', String(acc.requestCount || 0)) : '')
       + '</div>'
       + concurrencySection
+      + proxySection
       + planSection
       + quotaSection
       + usageSection
@@ -1082,6 +1147,35 @@ async function deleteAccount(name) {
   }
 }
 
+async function saveAccountProxy(name) {
+  const input = document.getElementById('accProxy_' + name);
+  const btn = document.getElementById('accProxySaveBtn_' + name);
+  const $status = document.getElementById('accProxyStatus_' + name);
+  if (!input || !btn) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    await api('PUT', '/api/accounts/proxy', { account: name, proxy: input.value.trim() });
+    btn.textContent = 'Save';
+    btn.disabled = false;
+    if ($status) {
+      $status.textContent = input.value.trim() ? 'Proxy saved' : 'Cleared, using global proxy';
+      $status.className = 'mt-1 text-[10px] text-emerald-600 dark:text-emerald-400';
+      setTimeout(() => { $status.textContent = ''; $status.className = 'mt-1 text-[10px] text-fg-faint'; }, 2000);
+    }
+    await loadAll(true);
+  } catch (e) {
+    btn.textContent = 'Save';
+    btn.disabled = false;
+    if ($status) {
+      $status.textContent = 'Failed: ' + e.message;
+      $status.className = 'mt-1 text-[10px] text-red-600 dark:text-red-400';
+    }
+  }
+}
+
 async function adjustAccountConcurrency(name, delta) {
   const $val = document.getElementById('accConc_' + name);
   if (!$val) return;
@@ -1125,6 +1219,10 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+function escAttr(s) {
+  return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ── Keyboard shortcuts ──
