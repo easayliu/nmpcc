@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>nmpcc</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -138,13 +138,19 @@
       transition: stroke-dashoffset 0.5s ease;
     }
 
-    /* Sidebar collapse on mobile */
+    /* Mobile layout */
     @media (max-width: 768px) {
-      .sidebar { display: none; }
-      .sidebar.open { display: flex; position: fixed; z-index: 40; inset: 0; width: 100%; background: var(--surface-0); }
-      .mobile-menu-btn { display: flex !important; }
+      .sidebar { display: none !important; }
+      .mobile-menu-btn { display: none !important; }
       .hide-mobile { display: none !important; }
-      .mobile-text-sm { font-size: 10px !important; }
+      .desktop-only { display: none !important; }
+      #mobileTabBar { display: flex !important; }
+      /* Ensure content doesn't hide behind tab bar */
+      #content { padding-bottom: 56px; }
+    }
+    @media (min-width: 769px) {
+      .mobile-only { display: none !important; }
+      #mobileTabBar { display: none !important; }
     }
 
     /* Table row highlight */
@@ -166,6 +172,9 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* Safe area for iOS bottom bar */
+    .safe-area-pb { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
     /* Sonnet usage bar gradient */
     .usage-bar-gradient {
       background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444);
@@ -178,12 +187,6 @@
   <!-- Top Bar -->
   <header class="h-12 border-b border-border flex items-center justify-between px-4 shrink-0 bg-surface-0">
     <div class="flex items-center gap-3">
-      <!-- Mobile menu button -->
-      <button onclick="toggleSidebar()" class="mobile-menu-btn hidden w-7 h-7 rounded-lg border border-border-subtle items-center justify-center text-fg-faint hover:text-fg">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-        </svg>
-      </button>
       <div class="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-[11px] font-bold text-white tracking-tight shadow-sm">N</div>
       <div class="flex items-baseline gap-1.5">
         <span class="text-[14px] font-semibold tracking-tight">nmpcc</span>
@@ -265,6 +268,26 @@
     </main>
   </div>
 
+  <!-- Mobile Bottom Tab Bar -->
+  <nav id="mobileTabBar" class="fixed bottom-0 left-0 right-0 h-14 bg-surface-0 border-t border-border flex items-center justify-around z-30 safe-area-pb" style="display:none">
+    <button onclick="navigate('overview')" data-nav="overview" class="mob-tab flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 12a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1v-7z"/></svg>
+      <span class="text-[10px] font-medium">Overview</span>
+    </button>
+    <button onclick="navigate('accounts')" data-nav="accounts" class="mob-tab flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      <span class="text-[10px] font-medium">Accounts</span>
+    </button>
+    <button onclick="navigate('logs')" data-nav="logs" class="mob-tab flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+      <span class="text-[10px] font-medium">Logs</span>
+    </button>
+    <button onclick="navigate('settings')" data-nav="settings" class="mob-tab flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span class="text-[10px] font-medium">Settings</span>
+    </button>
+  </nav>
+
   <!-- Add Account Modal -->
   <div id="loginModal" class="fixed inset-0 bg-black/30 dark:bg-black/50 modal-backdrop flex items-center justify-center z-50 hidden"
        onclick="if(event.target===this)closeLoginModal()">
@@ -291,9 +314,9 @@
   </div>
 
   <!-- Account Detail Modal -->
-  <div id="detailModal" class="fixed inset-0 bg-black/30 dark:bg-black/50 modal-backdrop flex items-center justify-center z-50 hidden"
+  <div id="detailModal" class="fixed inset-0 bg-black/30 dark:bg-black/50 modal-backdrop flex items-end sm:items-center justify-center z-50 hidden"
        onclick="if(event.target===this)this.classList.add('hidden')">
-    <div class="bg-surface-0 border border-border rounded-2xl w-full max-w-md mx-4 shadow-xl max-h-[85vh] flex flex-col">
+    <div class="bg-surface-0 border border-border rounded-t-2xl sm:rounded-2xl w-full max-w-md sm:mx-4 shadow-xl max-h-[90vh] sm:max-h-[85vh] flex flex-col safe-area-pb">
       <div class="flex items-center justify-between px-5 py-3.5 border-b border-border shrink-0">
         <h3 id="detailTitle" class="text-[13px] font-semibold">Account</h3>
         <button onclick="document.getElementById('detailModal').classList.add('hidden')"
@@ -427,10 +450,18 @@ window.addEventListener('hashchange', function() {
 });
 
 function render() {
+  // Desktop sidebar
   document.querySelectorAll('.nav-item').forEach(el => {
     const isActive = el.dataset.nav === currentPage;
     el.className = `nav-item w-full text-left px-3 py-2 rounded-lg text-[12px] flex items-center gap-2.5 transition-colors font-medium ${
       isActive ? 'bg-surface-2 text-fg' : 'text-fg-muted hover:text-fg hover:bg-surface-1'
+    }`;
+  });
+  // Mobile tab bar
+  document.querySelectorAll('.mob-tab').forEach(el => {
+    const isActive = el.dataset.nav === currentPage;
+    el.className = `mob-tab flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-lg ${
+      isActive ? 'text-accent' : 'text-fg-faint'
     }`;
   });
 
@@ -450,6 +481,42 @@ function usageBar(pct, compact) {
   return '<div class="flex items-center gap-2">'
     + '<div class="' + w + ' bg-surface-2 rounded-full ' + h + '"><div class="' + color + ' ' + h + ' rounded-full transition-all duration-500" style="width:' + Math.min(pct, 100) + '%"></div></div>'
     + '<span class="' + textColor + ' tabular-nums font-semibold text-[11px]">' + pct + '%</span>'
+    + '</div>';
+}
+
+function overviewMobileCard(acc) {
+  var pu = acc.planUsage;
+  var dotClass = acc.healthy ? 'bg-emerald-500' : 'bg-red-500';
+  if (acc.healthy && acc.active === 0) dotClass += ' pulse-dot';
+  var textClass = acc.healthy ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+  var statusText = acc.healthy ? (acc.active > 0 ? acc.active + ' active' : 'Idle') : 'Down';
+  var rlBadge = '';
+  if (acc.rateLimit && acc.rateLimit.status === 'limited') {
+    rlBadge = ' <span class="text-[9px] text-red-500 bg-red-50 dark:bg-red-950/30 px-1 py-0.5 rounded font-medium">LIMITED</span>';
+  }
+  // Usage bars
+  var usageHtml = '';
+  if (pu && pu.updatedAt) {
+    usageHtml = '<div class="flex items-center gap-3 mt-2 pt-2 border-t border-border-subtle">'
+      + miniUsageBar('5h', pu.sessionUsed, '')
+      + miniUsageBar('Wk', pu.weeklyUsed, '')
+      + '</div>';
+  }
+  var hue = hashCode(acc.name) % 360;
+  return '<div class="bg-surface-1 border border-border rounded-xl p-3 cursor-pointer" onclick="showAccountDetail(\'' + esc(acc.name) + '\')">'
+    + '<div class="flex items-center justify-between">'
+    + '<div class="flex items-center gap-2.5 min-w-0">'
+    + '<div class="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0" style="background:hsl(' + hue + ',40%,92%);color:hsl(' + hue + ',50%,35%)">' + acc.name.slice(0, 2).toUpperCase() + '</div>'
+    + '<div class="min-w-0">'
+    + '<div class="flex items-center gap-1.5 flex-wrap"><span class="text-[12px] font-semibold text-fg truncate">' + esc(acc.name) + '</span>' + planBadgeHtml(acc.profile, 'sm') + '</div>'
+    + '<div class="text-[10px] text-fg-faint">' + acc.requestCount + ' reqs' + (acc.usage ? ' &middot; $' + acc.usage.totalCostUsd.toFixed(4) : '') + '</div>'
+    + '</div></div>'
+    + '<div class="flex items-center gap-1.5 shrink-0">'
+    + '<span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>'
+    + '<span class="text-[10px] font-medium ' + textClass + '">' + statusText + '</span>' + rlBadge
+    + '</div>'
+    + '</div>'
+    + usageHtml
     + '</div>';
 }
 
@@ -493,7 +560,7 @@ function overviewTableRow(acc) {
     + '<span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>'
     + '<span class="font-medium ' + textClass + '">' + statusText + '</span>' + rlBadge
     + '</span></td>'
-    + '<td class="px-4 py-2.5 hide-mobile">' + (function(p) {
+    + '<td class="px-4 py-2.5">' + (function(p) {
         if (!p) return '<span class="text-fg-faint">--</span>';
         var lines = '';
         if (p.subscriptionCreatedAt) lines += '<div class="text-[10px] text-fg-muted">Since ' + new Date(p.subscriptionCreatedAt).toLocaleDateString() + '</div>';
@@ -506,7 +573,7 @@ function overviewTableRow(acc) {
       })(acc.profile) + '</td>'
     + '<td class="px-4 py-2.5">' + fiveHourCell + resetInfo + '</td>'
     + '<td class="px-4 py-2.5">' + weeklyCell + weeklyResetInfo + '</td>'
-    + '<td class="px-4 py-2.5 text-right text-fg-muted tabular-nums font-medium text-[11px] hide-mobile">' + (acc.usage ? '$' + acc.usage.totalCostUsd.toFixed(4) : '--') + '</td>'
+    + '<td class="px-4 py-2.5 text-right text-fg-muted tabular-nums font-medium text-[11px]">' + (acc.usage ? '$' + acc.usage.totalCostUsd.toFixed(4) : '--') + '</td>'
     + '<td class="px-4 py-2.5 text-right tabular-nums font-medium text-[11px]">' + acc.requestCount + '</td>'
     + '</tr>';
 }
@@ -526,27 +593,33 @@ function renderOverview($el) {
   });
 
   var tableRows = cachedAccounts.map(overviewTableRow).join('');
-  var tableHtml = cachedAccounts.length === 0
-    ? '<div class="border-2 border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">'
-      + '<div class="w-10 h-10 rounded-xl bg-surface-1 border border-border flex items-center justify-center text-fg-faint">'
-      + '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>'
-      + '</div>'
-      + '<p class="text-[12px] text-fg-muted font-medium">No accounts yet</p>'
-      + '<button onclick="navigate(\'accounts\');openLoginModal()" class="text-[12px] text-accent hover:underline underline-offset-2 font-medium">Add your first account</button>'
-      + '</div>'
-    : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0 overflow-x-auto -mx-4 sm:mx-0 rounded-none sm:rounded-xl border-x-0 sm:border-x">'
-      + '<table class="w-full text-[11px] min-w-[480px]">'
-      + '<thead><tr class="border-b border-border text-fg-faint bg-surface-1">'
-      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Account</th>'
-      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Status</th>'
-      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px] hide-mobile">Subscription</th>'
-      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">5h</th>'
-      + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Weekly</th>'
-      + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px] hide-mobile">Cost</th>'
-      + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Reqs</th>'
-      + '</tr></thead>'
-      + '<tbody class="stagger">' + tableRows + '</tbody>'
-      + '</table></div>';
+  var mobileCards = cachedAccounts.map(overviewMobileCard).join('');
+
+  var emptyHtml = '<div class="border-2 border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">'
+    + '<div class="w-10 h-10 rounded-xl bg-surface-1 border border-border flex items-center justify-center text-fg-faint">'
+    + '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>'
+    + '</div>'
+    + '<p class="text-[12px] text-fg-muted font-medium">No accounts yet</p>'
+    + '<button onclick="navigate(\'accounts\');openLoginModal()" class="text-[12px] text-accent hover:underline underline-offset-2 font-medium">Add your first account</button>'
+    + '</div>';
+
+  var desktopTable = '<div class="border border-border rounded-xl overflow-hidden bg-surface-0 overflow-x-auto">'
+    + '<table class="w-full text-[11px]">'
+    + '<thead><tr class="border-b border-border text-fg-faint bg-surface-1">'
+    + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Account</th>'
+    + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Status</th>'
+    + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Subscription</th>'
+    + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">5h</th>'
+    + '<th class="text-left font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Weekly</th>'
+    + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Cost</th>'
+    + '<th class="text-right font-semibold px-4 py-2.5 uppercase tracking-wider text-[10px]">Reqs</th>'
+    + '</tr></thead>'
+    + '<tbody class="stagger">' + tableRows + '</tbody>'
+    + '</table></div>';
+
+  var tableHtml = cachedAccounts.length === 0 ? emptyHtml
+    : '<div class="desktop-only">' + desktopTable + '</div>'
+    + '<div class="mobile-only space-y-2 stagger">' + mobileCards + '</div>';
 
   $el.innerHTML = '<div class="p-4 sm:p-6 lg:p-8 max-w-5xl page-enter">'
     + '<div class="mb-6">'
@@ -555,7 +628,7 @@ function renderOverview($el) {
     + (lastRefreshTime ? ' <span class="text-fg-faint/60">&middot; updated ' + timeAgo(lastRefreshTime) + '</span>' : '')
     + '</p>'
     + '</div>'
-    + '<div class="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-3 stagger mb-6">'
+    + '<div class="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 stagger mb-6">'
     + statCard('Uptime', d ? formatUptime(d.uptime_seconds) : '--', upArrowIcon())
     + statCard('Requests', d ? d.total_requests.toLocaleString() : '--', chartIcon())
     + statCard('Healthy', healthyVal, heartIcon(), healthColor)
@@ -807,7 +880,7 @@ async function renderLogs($el) {
       ? '<div class="border-2 border-dashed border-border rounded-2xl py-12 flex flex-col items-center gap-2">'
         + '<svg class="w-8 h-8 text-fg-faint/40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>'
         + '<p class="text-[12px] text-fg-muted font-medium">No requests yet</p></div>'
-      : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0 overflow-x-auto -mx-4 sm:mx-0 rounded-none sm:rounded-xl border-x-0 sm:border-x">'
+      : '<div class="border border-border rounded-xl overflow-hidden bg-surface-0 overflow-x-auto">'
         + '<table class="w-full text-[11px] min-w-[700px]">'
         + '<thead><tr class="border-b border-border text-fg-faint bg-surface-1">'
         + '<th class="text-left font-semibold px-3 py-2.5 uppercase tracking-wider text-[10px]">Time</th>'
