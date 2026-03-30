@@ -152,6 +152,7 @@ func New(cfg *config.Config) *AccountPool {
 		cfg:      cfg,
 	}
 	go pool.autoRecover()
+	go pool.refreshProfiles()
 	return pool
 }
 
@@ -527,6 +528,24 @@ func (p *AccountPool) autoRecover() {
 		}
 		p.mu.Unlock()
 		p.signal()
+	}
+}
+
+// refreshProfiles periodically reloads account profile data (token expiry, subscription info)
+// from disk so the Web UI stays accurate after CLI refreshes tokens.
+func (p *AccountPool) refreshProfiles() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		p.mu.Lock()
+		for _, acc := range p.accounts {
+			if updated := loadAccountProfile(p.cfg.AccountsDir, acc.Name); updated != nil {
+				acc.Profile = updated
+			}
+		}
+		p.mu.Unlock()
+		log.Printf("[pool] account profiles refreshed")
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 
 	"nmpcc/internal/config"
 	"nmpcc/internal/handler"
+	"nmpcc/internal/logstore"
 	"nmpcc/internal/pool"
 )
 
@@ -26,7 +27,15 @@ func main() {
 	p := pool.New(cfg)
 	p.StartDiscovery()
 
-	h := handler.New(p, cfg)
+	logs, err := logstore.New(cfg.AccountsDir)
+	if err != nil {
+		log.Printf("[warn] failed to open log database, using in-memory only: %v", err)
+	}
+	if logs != nil {
+		defer logs.Close()
+	}
+
+	h := handler.New(p, cfg, logs)
 
 	status := p.Status()
 	if len(status) == 0 {

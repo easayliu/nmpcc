@@ -16,9 +16,11 @@ import (
 	"nmpcc/internal/config"
 	"nmpcc/internal/executor"
 	"nmpcc/internal/formatter"
+	"nmpcc/internal/logstore"
 	"nmpcc/internal/pool"
 	"nmpcc/internal/quota"
 	"nmpcc/internal/web"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +33,7 @@ type Handler struct {
 	startTime time.Time
 	webSecret []byte // HMAC key for web session tokens
 	sessions  *sessionStore
+	logs      *logstore.Store
 }
 
 // sessionEntry binds a downstream session to a specific account and CLI session.
@@ -88,7 +91,7 @@ func (s *sessionStore) saveLocked() {
 	os.WriteFile(s.path, data, 0o644)
 }
 
-func New(p *pool.AccountPool, cfg *config.Config) *Handler {
+func New(p *pool.AccountPool, cfg *config.Config, logs *logstore.Store) *Handler {
 	secret := make([]byte, 32)
 	rand.Read(secret)
 
@@ -99,6 +102,7 @@ func New(p *pool.AccountPool, cfg *config.Config) *Handler {
 		startTime: time.Now(),
 		webSecret: secret,
 		sessions:  newSessionStore(filepath.Join(cfg.AccountsDir, ".sessions.json")),
+		logs:      logs,
 	}
 	h.mux.HandleFunc("/v1/messages", h.handleMessages)
 	h.mux.HandleFunc("/v1/models", h.handleModels)
@@ -311,6 +315,9 @@ func (h *Handler) recordRequestLog(account, model string, stream bool, start tim
 	}
 
 	h.pool.AddRequestLog(entry)
+	if h.logs != nil {
+		h.logs.Add(entry)
+	}
 }
 
 func (h *Handler) extractRateLimit(accountName string, events []map[string]any) {
@@ -672,6 +679,20 @@ func (h *Handler) handleLogs(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
+
+	// If SQLite store is available, use it with query params
+	if h.logs != nil {
+		account := r.URL.Query().Get("account")
+		since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+		until, _ := strconv.ParseInt(r.URL.Query().Get("until"), 10, 64)
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		if limit <= 0 {
+			limit = 200
+		}
+		sendJSON(w, http.StatusOK, h.logs.Query(account, since, until, limit))
+		return
+	}
+
 	sendJSON(w, http.StatusOK, h.pool.GetRequestLogs())
 }
 
