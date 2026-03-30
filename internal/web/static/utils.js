@@ -69,6 +69,11 @@ function escAttr(s) {
   return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Escape a string for safe use inside JS string literals in onclick attributes.
+function escJs(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
 function label(key) {
   return { maxConcurrency: 'Max Concurrency', maxTurns: 'Max Turns' }[key] || key;
 }

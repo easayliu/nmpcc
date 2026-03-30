@@ -111,12 +111,15 @@ function renderAccounts($el) {
 // ── Logs Page ──
 
 // Current log filter state
-var logFilter = { account: '', range: 'today', limit: 200 };
+var logFilter = { account: '', range: 'today', limit: 200, offset: 0 };
+var logSummary = { count: 0, inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+var logHasMore = false;
 
 async function fetchLogs() {
   var params = [];
   if (logFilter.account) params.push('account=' + encodeURIComponent(logFilter.account));
   if (logFilter.limit) params.push('limit=' + logFilter.limit);
+  if (logFilter.offset > 0) params.push('offset=' + logFilter.offset);
 
   // Time range
   var now = Math.floor(Date.now() / 1000);
@@ -134,9 +137,26 @@ async function fetchLogs() {
 
   var url = '/api/logs' + (params.length ? '?' + params.join('&') : '');
   try {
-    cachedLogs = await api('GET', url);
+    var result = await api('GET', url);
+    // Support both new {logs,summary,hasMore} format and legacy array format
+    if (Array.isArray(result)) {
+      cachedLogs = result;
+      logSummary = { count: result.length, inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+      result.forEach(function(l) {
+        logSummary.inputTokens += l.inputTokens || 0;
+        logSummary.outputTokens += l.outputTokens || 0;
+        logSummary.totalCostUsd += l.totalCostUsd || 0;
+      });
+      logHasMore = false;
+    } else {
+      cachedLogs = result.logs || [];
+      logSummary = result.summary || { count: 0, inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+      logHasMore = result.hasMore || false;
+    }
   } catch (e) {
     cachedLogs = [];
+    logSummary = { count: 0, inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+    logHasMore = false;
   }
 }
 
@@ -241,21 +261,34 @@ function renderLogsContent($el) {
   var rows = buildLogRows();
   var mobileLogCards = buildMobileLogCards();
 
-  var totalIn = 0, totalOut = 0, totalCost = 0;
-  cachedLogs.forEach(function(l) {
-    totalIn += l.inputTokens || 0;
-    totalOut += l.outputTokens || 0;
-    totalCost += l.totalCostUsd || 0;
-  });
+  var pageStart = logFilter.offset + 1;
+  var pageEnd = logFilter.offset + cachedLogs.length;
 
-  var summaryHtml = cachedLogs.length > 0
+  var summaryHtml = logSummary.count > 0
     ? '<div class="flex flex-wrap items-center gap-3 sm:gap-4 text-[11px] text-fg-faint tabular-nums mb-4">'
-      + '<span>' + cachedLogs.length + ' requests</span>'
-      + '<span>In: <strong class="text-fg-muted">' + formatTokens(totalIn) + '</strong></span>'
-      + '<span>Out: <strong class="text-fg-muted">' + formatTokens(totalOut) + '</strong></span>'
-      + '<span>Cost: <strong class="text-fg-muted">$' + totalCost.toFixed(4) + '</strong></span>'
+      + '<span>Total: <strong class="text-fg-muted">' + logSummary.count + '</strong> requests</span>'
+      + '<span>In: <strong class="text-fg-muted">' + formatTokens(logSummary.inputTokens) + '</strong></span>'
+      + '<span>Out: <strong class="text-fg-muted">' + formatTokens(logSummary.outputTokens) + '</strong></span>'
+      + '<span>Cost: <strong class="text-fg-muted">$' + logSummary.totalCostUsd.toFixed(4) + '</strong></span>'
+      + (logSummary.count > cachedLogs.length ? '<span>Showing ' + pageStart + '-' + pageEnd + '</span>' : '')
       + '</div>'
     : '';
+
+  // Pagination controls
+  var paginationHtml = '';
+  if (logFilter.offset > 0 || logHasMore) {
+    paginationHtml = '<div class="flex items-center justify-between mt-4">'
+      + '<button onclick="logPrevPage()"'
+      + ' class="text-[11px] border border-border text-fg-muted hover:text-fg px-3 py-1.5 rounded-lg font-medium transition-colors'
+      + (logFilter.offset > 0 ? ' hover:bg-surface-1' : ' opacity-40 cursor-not-allowed') + '"'
+      + (logFilter.offset > 0 ? '' : ' disabled') + '>Previous</button>'
+      + '<span class="text-[11px] text-fg-faint tabular-nums">' + pageStart + '-' + pageEnd + ' of ' + logSummary.count + '</span>'
+      + '<button onclick="logNextPage()"'
+      + ' class="text-[11px] border border-border text-fg-muted hover:text-fg px-3 py-1.5 rounded-lg font-medium transition-colors'
+      + (logHasMore ? ' hover:bg-surface-1' : ' opacity-40 cursor-not-allowed') + '"'
+      + (logHasMore ? '' : ' disabled') + '>Next</button>'
+      + '</div>';
+  }
 
   $el.innerHTML = '<div class="p-4 sm:p-6 lg:p-8 page-enter">'
     + '<div class="mb-4">'
@@ -283,7 +316,20 @@ function renderLogsContent($el) {
         + '<tbody>' + rows + '</tbody>'
         + '</table></div>'
         + '<div class="lg:hidden space-y-2 stagger">' + mobileLogCards + '</div>')
+    + paginationHtml
     + '</div>';
+}
+
+function logNextPage() {
+  if (!logHasMore) return;
+  logFilter.offset += logFilter.limit;
+  reloadLogs(false);
+}
+
+function logPrevPage() {
+  if (logFilter.offset <= 0) return;
+  logFilter.offset = Math.max(0, logFilter.offset - logFilter.limit);
+  reloadLogs(false);
 }
 
 async function renderLogs($el) {
@@ -296,7 +342,8 @@ async function renderLogs($el) {
   renderLogsContent($el);
 }
 
-async function reloadLogs() {
+async function reloadLogs(resetPage) {
+  if (resetPage !== false) logFilter.offset = 0;
   var $el = document.getElementById('content');
   await fetchLogs();
   renderLogsContent($el);
@@ -353,9 +400,13 @@ async function showAccountDetail(name) {
 
   try {
     const acc = cachedAccounts.find(a => a.name === name);
-    const rl = acc?.rateLimit;
-    const usage = acc?.usage;
-    const pu = acc?.planUsage;
+    if (!acc) {
+      $body.innerHTML = '<p class="text-fg-muted text-[12px]">Account not found. It may have been removed.</p>';
+      return;
+    }
+    const rl = acc.rateLimit;
+    const usage = acc.usage;
+    const pu = acc.planUsage;
 
     // Profile section
     const profile = acc?.profile;
@@ -443,9 +494,9 @@ async function showAccountDetail(name) {
       + '<p class="text-[10px] text-fg-faint">0 = global default</p>'
       + '</div>'
       + '<div class="flex items-center gap-2">'
-      + '<button onclick="adjustAccountConcurrency(\'' + esc(name) + '\', -1)" class="w-6 h-6 rounded-md border border-border flex items-center justify-center text-fg-muted hover:text-fg hover:bg-surface-2 text-[12px] font-medium">&minus;</button>'
+      + '<button onclick="adjustAccountConcurrency(\'' + escJs(name) + '\', -1)" class="w-6 h-6 rounded-md border border-border flex items-center justify-center text-fg-muted hover:text-fg hover:bg-surface-2 text-[12px] font-medium">&minus;</button>'
       + '<span id="accConc_' + esc(name) + '" class="text-[12px] font-semibold tabular-nums w-6 text-center">' + (acc.maxConcurrency || 0) + '</span>'
-      + '<button onclick="adjustAccountConcurrency(\'' + esc(name) + '\', 1)" class="w-6 h-6 rounded-md border border-border flex items-center justify-center text-fg-muted hover:text-fg hover:bg-surface-2 text-[12px] font-medium">+</button>'
+      + '<button onclick="adjustAccountConcurrency(\'' + escJs(name) + '\', 1)" class="w-6 h-6 rounded-md border border-border flex items-center justify-center text-fg-muted hover:text-fg hover:bg-surface-2 text-[12px] font-medium">+</button>'
       + '</div>'
       + '</div></div>';
 
@@ -459,7 +510,7 @@ async function showAccountDetail(name) {
       + '<input id="accProxy_' + esc(name) + '" type="text" value="' + escAttr(acc.proxy || '') + '" placeholder="socks5://... or http://..."'
       + ' class="flex-1 text-[11px] bg-surface-0 border border-border-subtle rounded-lg px-2.5 py-1.5 text-fg font-mono'
       + ' focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/10 placeholder-fg-faint transition-all">'
-      + '<button onclick="saveAccountProxy(\'' + esc(name) + '\')" id="accProxySaveBtn_' + esc(name) + '"'
+      + '<button onclick="saveAccountProxy(\'' + escJs(name) + '\')" id="accProxySaveBtn_' + esc(name) + '"'
       + ' class="text-[11px] border border-border text-fg-muted hover:text-fg hover:bg-surface-2 px-2.5 py-1.5 rounded-lg font-medium transition-colors shrink-0">Save</button>'
       + '</div>'
       + '<div id="accProxyStatus_' + esc(name) + '" class="mt-1 text-[10px] text-fg-faint"></div>'
@@ -479,13 +530,13 @@ async function showAccountDetail(name) {
       + usageSection
       + '<div class="mt-3 pt-3 border-t border-border space-y-2">'
       + '<div class="grid grid-cols-2 gap-2">'
-      + '<button onclick="fetchUsage(\'' + esc(name) + '\')" id="usageBtn"'
+      + '<button onclick="fetchUsage(\'' + escJs(name) + '\')" id="usageBtn"'
       + ' class="text-[11px] border border-border text-fg-muted hover:text-fg py-2 rounded-lg transition-colors font-medium hover:bg-surface-1">Fetch Usage</button>'
-      + '<button onclick="refreshQuota(\'' + esc(name) + '\')" id="quotaRefreshBtn"'
+      + '<button onclick="refreshQuota(\'' + escJs(name) + '\')" id="quotaRefreshBtn"'
       + ' class="text-[11px] border border-border text-fg-muted hover:text-fg py-2 rounded-lg transition-colors font-medium hover:bg-surface-1">Refresh Quota</button>'
       + '</div>'
       + '<div id="usageResult" class="hidden"></div>'
-      + '<button onclick="deleteAccount(\'' + esc(name) + '\')" id="deleteAccountBtn"'
+      + '<button onclick="deleteAccount(\'' + escJs(name) + '\')" id="deleteAccountBtn"'
       + ' class="w-full text-[11px] border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 py-2 rounded-lg transition-colors font-medium">Delete Account</button>'
       + '</div>';
   } catch (e) {

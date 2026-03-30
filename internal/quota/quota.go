@@ -3,7 +3,7 @@ package quota
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"nmpcc/internal/logger"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -149,7 +149,7 @@ func FetchUsage(accountsDir, accountName, proxy string) (*UsageResult, error) {
 				dataCh <- tmp
 			}
 			if err != nil {
-				log.Printf("[quota] account=%s reader stopped: %v", accountName, err)
+				logger.Warn("[quota] account=%s reader stopped: %v", accountName, err)
 				close(dataCh)
 				return
 			}
@@ -158,23 +158,23 @@ func FetchUsage(accountsDir, accountName, proxy string) (*UsageResult, error) {
 
 	// Phase 1: Wait for interactive prompt to be ready (drain init output)
 	initRaw := drainUntilIdle(dataCh, 20*time.Second, 4*time.Second)
-	log.Printf("[quota] account=%s init phase: %d bytes", accountName, len(initRaw))
+	logger.Debug("[quota] account=%s init phase: %d bytes", accountName, len(initRaw))
 
 	// Phase 2: Send /usage
 	if _, err := ptmx.Write([]byte("/usage\r")); err != nil {
 		return nil, fmt.Errorf("write /usage: %w", err)
 	}
-	log.Printf("[quota] account=%s sent /usage", accountName)
+	logger.Debug("[quota] account=%s sent /usage", accountName)
 
 	// Phase 3: Collect /usage output
 	raw := drainUntilIdle(dataCh, 20*time.Second, 5*time.Second)
-	log.Printf("[quota] account=%s usage phase: %d bytes", accountName, len(raw))
+	logger.Debug("[quota] account=%s usage phase: %d bytes", accountName, len(raw))
 
 	// Exit
 	ptmx.Write([]byte("/exit\r"))
 
 	text := stripANSI(raw)
-	log.Printf("[quota] account=%s raw usage: %s", accountName, text)
+	logger.Debug("[quota] account=%s raw usage: %s", accountName, text)
 
 	result := parseUsage(text)
 	result.Raw = text

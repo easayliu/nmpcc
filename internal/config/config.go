@@ -2,7 +2,7 @@ package config
 
 import (
 	"encoding/json"
-	"log"
+	"nmpcc/internal/logger"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,7 +24,7 @@ type Config struct {
 	QueueTimeout   time.Duration
 	GlobalProxy    string // Global proxy URL (socks5://... or http://...)
 
-	mu sync.Mutex // protects runtime settings file writes
+	mu sync.RWMutex // protects mutable runtime fields
 }
 
 // RuntimeSettings is the persisted runtime config (not env vars).
@@ -68,6 +68,58 @@ func Load() *Config {
 	return cfg
 }
 
+// Thread-safe accessors for mutable runtime fields.
+
+func (c *Config) GetMaxConcurrency() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.MaxConcurrency
+}
+
+func (c *Config) SetMaxConcurrency(v int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.MaxConcurrency = v
+}
+
+func (c *Config) GetMaxTurns() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.MaxTurns
+}
+
+func (c *Config) SetMaxTurns(v int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.MaxTurns = v
+}
+
+func (c *Config) GetGlobalProxy() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.GlobalProxy
+}
+
+func (c *Config) SetGlobalProxy(v string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.GlobalProxy = v
+}
+
+func (c *Config) GetServiceAPIKeys() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	cp := make([]string, len(c.ServiceAPIKeys))
+	copy(cp, c.ServiceAPIKeys)
+	return cp
+}
+
+func (c *Config) SetServiceAPIKeys(keys []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ServiceAPIKeys = keys
+}
+
 func (c *Config) runtimePath() string {
 	return filepath.Join(c.AccountsDir, "runtime.json")
 }
@@ -91,11 +143,11 @@ func (c *Config) SaveRuntime(rs *RuntimeSettings) {
 	defer c.mu.Unlock()
 	data, err := json.MarshalIndent(rs, "", "  ")
 	if err != nil {
-		log.Printf("[config] failed to marshal runtime settings: %v", err)
+		logger.Error("[config] failed to marshal runtime settings: %v", err)
 		return
 	}
 	if err := os.WriteFile(c.runtimePath(), data, 0o644); err != nil {
-		log.Printf("[config] failed to save runtime settings: %v", err)
+		logger.Error("[config] failed to save runtime settings: %v", err)
 	}
 }
 

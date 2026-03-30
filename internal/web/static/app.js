@@ -128,6 +128,10 @@ async function api(method, path, body) {
   if (apiKey) opts.headers['Authorization'] = 'Bearer ' + apiKey;
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    throw new Error((err.error && err.error.message) || res.statusText);
+  }
   return res.json();
 }
 

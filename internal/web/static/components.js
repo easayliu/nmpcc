@@ -192,7 +192,7 @@ function overviewTableRow(acc) {
     rlBadge = '<span class="ml-1 text-[10px] text-red-500 bg-red-50 dark:bg-red-950/30 px-1 py-0.5 rounded font-medium">LIMITED</span>';
   }
 
-  return '<tr class="border-b border-border-subtle last:border-0 table-row-hover transition-colors cursor-pointer" onclick="showAccountDetail(\'' + esc(acc.name) + '\')">'
+  return '<tr class="border-b border-border-subtle last:border-0 table-row-hover transition-colors cursor-pointer" onclick="showAccountDetail(\'' + escJs(acc.name) + '\')">'
     + '<td class="px-4 py-2.5"><div class="flex items-center gap-2.5">'
     + '<div class="w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold tracking-tight shrink-0" style="background:hsl(' + (hashCode(acc.name) % 360) + ',40%,92%);color:hsl(' + (hashCode(acc.name) % 360) + ',50%,35%)">' + acc.name.slice(0, 2).toUpperCase() + '</div>'
     + '<span class="font-semibold text-fg">' + esc(acc.name) + '</span>' + planBadgeHtml(acc.profile, 'sm') + (acc.profile && acc.profile.emailAddress ? '<div class="text-[10px] text-fg-faint font-normal">' + esc(acc.profile.emailAddress) + '</div>' : '') + '</div></td>'
@@ -237,7 +237,7 @@ function overviewMobileCard(acc) {
       + '</div>';
   }
   var hue = hashCode(acc.name) % 360;
-  return '<div class="bg-surface-1 border border-border rounded-xl p-3 cursor-pointer" onclick="showAccountDetail(\'' + esc(acc.name) + '\')">'
+  return '<div class="bg-surface-1 border border-border rounded-xl p-3 cursor-pointer" onclick="showAccountDetail(\'' + escJs(acc.name) + '\')">'
     + '<div class="flex items-center justify-between">'
     + '<div class="flex items-center gap-2.5 min-w-0">'
     + '<div class="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0" style="background:hsl(' + hue + ',40%,92%);color:hsl(' + hue + ',50%,35%)">' + acc.name.slice(0, 2).toUpperCase() + '</div>'
@@ -292,7 +292,7 @@ function accountCard(acc) {
   const initials = acc.name.slice(0, 2).toUpperCase();
   const hue = hashCode(acc.name) % 360;
 
-  return '<div class="bg-surface-1 border border-border rounded-xl px-3 sm:px-4 py-3 sm:py-3.5 card-lift cursor-pointer group" onclick="showAccountDetail(\'' + esc(acc.name) + '\')">'
+  return '<div class="bg-surface-1 border border-border rounded-xl px-3 sm:px-4 py-3 sm:py-3.5 card-lift cursor-pointer group" onclick="showAccountDetail(\'' + escJs(acc.name) + '\')">'
     + '<div class="flex items-center justify-between gap-2">'
     + '<div class="flex items-center gap-2.5 sm:gap-3.5 min-w-0">'
     + '<div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-[10px] sm:text-[11px] font-bold tracking-tight shadow-sm shrink-0" style="background:hsl(' + hue + ',40%,92%);color:hsl(' + hue + ',50%,35%)">' + initials + '</div>'

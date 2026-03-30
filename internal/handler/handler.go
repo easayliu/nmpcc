@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"nmpcc/internal/config"
 	"nmpcc/internal/executor"
 	"nmpcc/internal/formatter"
+	"nmpcc/internal/logger"
 	"nmpcc/internal/logstore"
 	"nmpcc/internal/pool"
 	"nmpcc/internal/quota"
@@ -161,11 +161,11 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 		sendError(w, http.StatusBadRequest, "Failed to read request body")
 		return
 	}
-	log.Printf("[DEBUG] Request body: %s", string(rawBody))
+	logger.Debug("[req] Request body: %s", string(rawBody))
 
 	var body messageRequest
 	if err := json.Unmarshal(rawBody, &body); err != nil {
-		log.Printf("[ERROR] JSON decode failed: %v, body: %s", err, string(rawBody))
+		logger.Error("[handler] JSON decode failed: %v, body: %s", err, string(rawBody))
 		sendError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -208,10 +208,10 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 			bindCancel()
 			if acquireErr == nil {
 				opts.SessionID = entry.CLISessionID
-				log.Printf("[session] resuming CLI session %s on account %s", entry.CLISessionID, entry.AccountName)
+				logger.Debug("[session] resuming CLI session %s on account %s", entry.CLISessionID, entry.AccountName)
 			} else {
 				// Bound account busy, fall through to any account (no resume)
-				log.Printf("[session] bound account %s busy, falling back to any", entry.AccountName)
+				logger.Debug("[session] bound account %s busy, falling back to any", entry.AccountName)
 			}
 		}
 	}
@@ -227,7 +227,7 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 	acc := slot.Account
 	opts.Proxy = h.pool.GetEffectiveProxy(acc.Name)
 	start := time.Now()
-	log.Printf("[req] account=%s model=%s stream=%v session=%s proxy=%q", acc.Name, body.Model, body.Stream, downstreamSessionID, opts.Proxy)
+	logger.Info("[req] account=%s model=%s stream=%v session=%s proxy=%q", acc.Name, body.Model, body.Stream, downstreamSessionID, opts.Proxy)
 
 	var result *executor.Result
 	if body.Stream {
@@ -242,7 +242,7 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 			CLISessionID: result.SessionID,
 			AccountName:  acc.Name,
 		})
-		log.Printf("[session] mapped downstream %s -> CLI %s @ %s", downstreamSessionID, result.SessionID, acc.Name)
+		logger.Debug("[session] mapped downstream %s -> CLI %s @ %s", downstreamSessionID, result.SessionID, acc.Name)
 	}
 
 	// Record request log
@@ -264,7 +264,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, acc *pool
 	})
 
 	if err != nil {
-		log.Printf("[error] account=%s err=%s", acc.Name, err)
+		logger.Error("[handler] account=%s err=%s", acc.Name, err)
 		h.maybeMarkUnhealthy(acc, err)
 	}
 	if result != nil {
@@ -277,7 +277,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, acc *pool
 func (h *Handler) handleNonStream(w http.ResponseWriter, acc *pool.Account, prompt string, opts executor.Options, model string) *executor.Result {
 	result, err := executor.Execute(context.Background(), h.cfg, acc.Name, prompt, opts, nil)
 	if err != nil {
-		log.Printf("[error] account=%s err=%s", acc.Name, err)
+		logger.Error("[handler] account=%s err=%s", acc.Name, err)
 		h.maybeMarkUnhealthy(acc, err)
 		sendError(w, http.StatusInternalServerError, "Execution error: "+err.Error())
 		return nil
@@ -334,7 +334,7 @@ func (h *Handler) extractRateLimit(accountName string, events []map[string]any) 
 				OverageStatus: toString(info["overageStatus"]),
 			}
 			h.pool.UpdateRateLimit(accountName, rl)
-			log.Printf("[ratelimit] account=%s status=%s resets=%d", accountName, rl.Status, rl.ResetsAt)
+			logger.Debug("[ratelimit] account=%s status=%s resets=%d", accountName, rl.Status, rl.ResetsAt)
 		}
 	}
 }
@@ -358,7 +358,7 @@ func (h *Handler) extractUsage(accountName string, events []map[string]any) {
 				delta.CacheCreation5m = toInt64(cc["ephemeral_5m_input_tokens"])
 			}
 			h.pool.AccumulateUsage(accountName, delta)
-			log.Printf("[usage] account=%s in=%d out=%d cost=$%.6f",
+			logger.Debug("[usage] account=%s in=%d out=%d cost=$%.6f",
 				accountName, delta.InputTokens, delta.OutputTokens, delta.TotalCostUSD)
 		}
 	}
@@ -413,7 +413,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"total_accounts":   len(accounts),
 		"healthy_accounts": healthy,
 		"busy_accounts":    busy,
-		"max_concurrency":  h.cfg.MaxConcurrency,
+		"max_concurrency":  h.cfg.GetMaxConcurrency(),
 	})
 }
 
@@ -428,10 +428,10 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		sendJSON(w, http.StatusOK, map[string]any{
-			"maxConcurrency": h.cfg.MaxConcurrency,
-			"maxTurns":       h.cfg.MaxTurns,
-			"globalProxy":    h.cfg.GlobalProxy,
-			"apiKeyCount":    len(h.cfg.ServiceAPIKeys),
+			"maxConcurrency": h.cfg.GetMaxConcurrency(),
+			"maxTurns":       h.cfg.GetMaxTurns(),
+			"globalProxy":    h.cfg.GetGlobalProxy(),
+			"apiKeyCount":    len(h.cfg.GetServiceAPIKeys()),
 		})
 	case http.MethodPut:
 		var body struct {
@@ -443,17 +443,17 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if body.MaxConcurrency != nil && *body.MaxConcurrency >= 1 {
-			h.cfg.MaxConcurrency = *body.MaxConcurrency
-			log.Printf("[settings] maxConcurrency set to %d", h.cfg.MaxConcurrency)
+			h.cfg.SetMaxConcurrency(*body.MaxConcurrency)
+			logger.Info("[settings] maxConcurrency set to %d", *body.MaxConcurrency)
 		}
 		if body.MaxTurns != nil && *body.MaxTurns >= 1 {
-			h.cfg.MaxTurns = *body.MaxTurns
-			log.Printf("[settings] maxTurns set to %d", h.cfg.MaxTurns)
+			h.cfg.SetMaxTurns(*body.MaxTurns)
+			logger.Info("[settings] maxTurns set to %d", *body.MaxTurns)
 		}
 		h.saveRuntimeSettings()
 		sendJSON(w, http.StatusOK, map[string]any{
-			"maxConcurrency": h.cfg.MaxConcurrency,
-			"maxTurns":       h.cfg.MaxTurns,
+			"maxConcurrency": h.cfg.GetMaxConcurrency(),
+			"maxTurns":       h.cfg.GetMaxTurns(),
 		})
 	default:
 		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -535,7 +535,7 @@ func (h *Handler) handleGlobalProxy(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		sendJSON(w, http.StatusOK, map[string]any{
-			"globalProxy": h.cfg.GlobalProxy,
+			"globalProxy": h.cfg.GetGlobalProxy(),
 		})
 	case http.MethodPut:
 		var body struct {
@@ -545,11 +545,11 @@ func (h *Handler) handleGlobalProxy(w http.ResponseWriter, r *http.Request) {
 			sendError(w, http.StatusBadRequest, "Invalid request body")
 			return
 		}
-		h.cfg.GlobalProxy = body.Proxy
-		log.Printf("[settings] globalProxy set to %q", h.cfg.GlobalProxy)
+		h.cfg.SetGlobalProxy(body.Proxy)
+		logger.Info("[settings] globalProxy set to %q", body.Proxy)
 		h.saveRuntimeSettings()
 		sendJSON(w, http.StatusOK, map[string]any{
-			"globalProxy": h.cfg.GlobalProxy,
+			"globalProxy": h.cfg.GetGlobalProxy(),
 		})
 	default:
 		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -564,16 +564,17 @@ func (h *Handler) handleAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		// Return masked keys list
-		masked := make([]map[string]string, len(h.cfg.ServiceAPIKeys))
-		for i, k := range h.cfg.ServiceAPIKeys {
+		// Return masked keys list — never expose full keys
+		keys := h.cfg.GetServiceAPIKeys()
+		masked := make([]map[string]string, len(keys))
+		for i, k := range keys {
 			m := "****"
 			if len(k) > 8 {
 				m = k[:4] + "..." + k[len(k)-4:]
 			} else if len(k) > 4 {
 				m = k[:4] + "****"
 			}
-			masked[i] = map[string]string{"id": k, "masked": m}
+			masked[i] = map[string]string{"id": m, "masked": m}
 		}
 		sendJSON(w, http.StatusOK, map[string]any{"keys": masked})
 
@@ -582,8 +583,10 @@ func (h *Handler) handleAPIKey(w http.ResponseWriter, r *http.Request) {
 		b := make([]byte, 24)
 		rand.Read(b)
 		newKey := "sk-" + hex.EncodeToString(b)
-		h.cfg.ServiceAPIKeys = append(h.cfg.ServiceAPIKeys, newKey)
-		log.Printf("[settings] new API key generated (total=%d)", len(h.cfg.ServiceAPIKeys))
+		keys := h.cfg.GetServiceAPIKeys()
+		keys = append(keys, newKey)
+		h.cfg.SetServiceAPIKeys(keys)
+		logger.Info("[settings] new API key generated (total=%d)", len(keys))
 		h.saveRuntimeSettings()
 		sendJSON(w, http.StatusOK, map[string]any{"key": newKey})
 
@@ -596,8 +599,9 @@ func (h *Handler) handleAPIKey(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		found := false
-		filtered := make([]string, 0, len(h.cfg.ServiceAPIKeys))
-		for _, k := range h.cfg.ServiceAPIKeys {
+		keys := h.cfg.GetServiceAPIKeys()
+		filtered := make([]string, 0, len(keys))
+		for _, k := range keys {
 			if k == body.Key {
 				found = true
 				continue
@@ -608,8 +612,8 @@ func (h *Handler) handleAPIKey(w http.ResponseWriter, r *http.Request) {
 			sendError(w, http.StatusNotFound, "Key not found")
 			return
 		}
-		h.cfg.ServiceAPIKeys = filtered
-		log.Printf("[settings] API key deleted (total=%d)", len(h.cfg.ServiceAPIKeys))
+		h.cfg.SetServiceAPIKeys(filtered)
+		logger.Info("[settings] API key deleted (total=%d)", len(filtered))
 		h.saveRuntimeSettings()
 		sendJSON(w, http.StatusOK, map[string]any{"ok": true})
 
@@ -621,12 +625,12 @@ func (h *Handler) handleAPIKey(w http.ResponseWriter, r *http.Request) {
 // saveRuntimeSettings persists current global + per-account settings to disk.
 func (h *Handler) saveRuntimeSettings() {
 	rs := &config.RuntimeSettings{
-		MaxConcurrency:     h.cfg.MaxConcurrency,
-		MaxTurns:           h.cfg.MaxTurns,
+		MaxConcurrency:     h.cfg.GetMaxConcurrency(),
+		MaxTurns:           h.cfg.GetMaxTurns(),
 		AccountConcurrency: h.pool.GetAccountConcurrency(),
-		GlobalProxy:        h.cfg.GlobalProxy,
+		GlobalProxy:        h.cfg.GetGlobalProxy(),
 		AccountProxy:       h.pool.GetAccountProxy(),
-		ServiceAPIKeys:     h.cfg.ServiceAPIKeys,
+		ServiceAPIKeys:     h.cfg.GetServiceAPIKeys(),
 	}
 	h.cfg.SaveRuntime(rs)
 }
@@ -686,10 +690,11 @@ func (h *Handler) handleLogs(w http.ResponseWriter, r *http.Request) {
 		since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 		until, _ := strconv.ParseInt(r.URL.Query().Get("until"), 10, 64)
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 		if limit <= 0 {
 			limit = 200
 		}
-		sendJSON(w, http.StatusOK, h.logs.Query(account, since, until, limit))
+		sendJSON(w, http.StatusOK, h.logs.Query(account, since, until, limit, offset))
 		return
 	}
 
@@ -762,13 +767,13 @@ func (h *Handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	// Remove the account's config directory so it won't be re-discovered on restart
 	configDir := filepath.Join(h.cfg.AccountsDir, account)
 	if err := os.RemoveAll(configDir); err != nil {
-		log.Printf("[accounts] failed to remove config dir %s: %v", configDir, err)
+		logger.Info("[accounts] failed to remove config dir %s: %v", configDir, err)
 		sendJSON(w, http.StatusOK, map[string]any{
 			"message": "Account " + account + " removed from pool, but failed to delete config dir: " + err.Error(),
 		})
 		return
 	}
-	log.Printf("[accounts] removed config dir %s", configDir)
+	logger.Info("[accounts] removed config dir %s", configDir)
 
 	sendJSON(w, http.StatusOK, map[string]any{"message": "Account " + account + " removed"})
 }
@@ -776,7 +781,7 @@ func (h *Handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 // ── Auth ──
 
 func (h *Handler) authenticate(r *http.Request) bool {
-	keys := h.cfg.ServiceAPIKeys
+	keys := h.cfg.GetServiceAPIKeys()
 	if len(keys) == 0 {
 		return true
 	}

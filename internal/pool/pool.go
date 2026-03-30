@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"nmpcc/internal/config"
+	"nmpcc/internal/logger"
 	"os"
 	"path/filepath"
 	"sort"
@@ -112,6 +112,7 @@ type AccountPool struct {
 	accounts       []*Account
 	requestLogs    []RequestLog
 	notify         chan struct{}
+	stop           chan struct{}
 	cfg            *config.Config
 	onAccountAdded func(name string)
 }
@@ -149,6 +150,7 @@ func New(cfg *config.Config) *AccountPool {
 	pool := &AccountPool{
 		accounts: accounts,
 		notify:   make(chan struct{}, 1),
+		stop:     make(chan struct{}),
 		cfg:      cfg,
 	}
 	go pool.autoRecover()
@@ -161,12 +163,16 @@ func New(cfg *config.Config) *AccountPool {
 func discoverAccounts(dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		log.Printf("[pool] failed to scan accounts dir %s: %v", dir, err)
+		logger.Error("[pool] failed to scan accounts dir %s: %v", dir, err)
 		return nil
 	}
+	removed := loadRemovedAccounts(dir)
 	var names []string
 	for _, e := range entries {
 		if !e.IsDir() {
+			continue
+		}
+		if removed[e.Name()] {
 			continue
 		}
 		// Only include directories that have .credentials.json (logged in)
@@ -175,7 +181,7 @@ func discoverAccounts(dir string) []string {
 			names = append(names, e.Name())
 		}
 	}
-	log.Printf("[pool] auto-discovered %d accounts from %s: %v", len(names), dir, names)
+	logger.Info("[pool] auto-discovered %d accounts from %s: %v", len(names), dir, names)
 	return names
 }
 
@@ -232,7 +238,7 @@ func (p *AccountPool) Acquire(ctx context.Context) (*Slot, error) {
 		acc := p.pickAvailable()
 		if acc != nil {
 			acc.Active++
-			acc.Busy = acc.Active >= acc.effectiveMaxConcurrency(p.cfg.MaxConcurrency)
+			acc.Busy = acc.Active >= acc.effectiveMaxConcurrency(p.cfg.GetMaxConcurrency())
 			acc.RequestCount++
 			acc.lastUsed = time.Now()
 			p.mu.Unlock()
@@ -258,9 +264,9 @@ func (p *AccountPool) AcquireByName(ctx context.Context, name string) (*Slot, er
 	for {
 		p.mu.Lock()
 		for _, acc := range p.accounts {
-			if acc.Name == name && acc.Healthy && acc.Active < acc.effectiveMaxConcurrency(p.cfg.MaxConcurrency) {
+			if acc.Name == name && acc.Healthy && acc.Active < acc.effectiveMaxConcurrency(p.cfg.GetMaxConcurrency()) {
 				acc.Active++
-				acc.Busy = acc.Active >= acc.effectiveMaxConcurrency(p.cfg.MaxConcurrency)
+				acc.Busy = acc.Active >= acc.effectiveMaxConcurrency(p.cfg.GetMaxConcurrency())
 				acc.RequestCount++
 				acc.lastUsed = time.Now()
 				p.mu.Unlock()
@@ -289,7 +295,7 @@ func (p *AccountPool) MarkUnhealthy(name string) {
 			acc.Healthy = false
 			acc.Busy = false
 			acc.unhealthyAt = time.Now()
-			log.Printf("[pool] account %s marked unhealthy", name)
+			logger.Warn("[pool] account %s marked unhealthy", name)
 			break
 		}
 	}
@@ -312,7 +318,7 @@ func (p *AccountPool) AddAccount(name string) bool {
 		Profile: loadAccountProfile(p.cfg.AccountsDir, name),
 		Healthy: true,
 	})
-	log.Printf("[pool] account %s added", name)
+	logger.Info("[pool] account %s added", name)
 	// Remove from removed list if it was previously removed
 	unremoveAccount(p.cfg.AccountsDir, name)
 	p.signal()
@@ -334,7 +340,7 @@ func (p *AccountPool) RemoveAccount(name string) bool {
 				return false
 			}
 			p.accounts = append(p.accounts[:i], p.accounts[i+1:]...)
-			log.Printf("[pool] account %s removed", name)
+			logger.Info("[pool] account %s removed", name)
 			// Persist removal so it survives restart
 			appendRemovedAccount(p.cfg.AccountsDir, name)
 			return true
@@ -351,8 +357,8 @@ func (p *AccountPool) SetMaxConcurrency(name string, max int) bool {
 	for _, acc := range p.accounts {
 		if acc.Name == name {
 			acc.MaxConcurrency = max
-			acc.Busy = acc.Active >= acc.effectiveMaxConcurrency(p.cfg.MaxConcurrency)
-			log.Printf("[pool] account %s maxConcurrency set to %d", name, max)
+			acc.Busy = acc.Active >= acc.effectiveMaxConcurrency(p.cfg.GetMaxConcurrency())
+			logger.Info("[pool] account %s maxConcurrency set to %d", name, max)
 			p.signal()
 			return true
 		}
@@ -368,7 +374,7 @@ func (p *AccountPool) SetProxy(name, proxy string) bool {
 	for _, acc := range p.accounts {
 		if acc.Name == name {
 			acc.Proxy = proxy
-			log.Printf("[pool] account %s proxy set to %q", name, proxy)
+			logger.Info("[pool] account %s proxy set to %q", name, proxy)
 			return true
 		}
 	}
@@ -400,10 +406,10 @@ func (p *AccountPool) GetEffectiveProxy(name string) string {
 			if acc.Proxy != "" {
 				return acc.Proxy
 			}
-			return p.cfg.GlobalProxy
+			return p.cfg.GetGlobalProxy()
 		}
 	}
-	return p.cfg.GlobalProxy
+	return p.cfg.GetGlobalProxy()
 }
 
 // GetAccountConcurrency returns per-account concurrency overrides (non-zero only).
@@ -501,7 +507,7 @@ func (p *AccountPool) MarkHealthy(name string) {
 	for _, acc := range p.accounts {
 		if acc.Name == name {
 			acc.Healthy = true
-			log.Printf("[pool] account %s marked healthy", name)
+			logger.Info("[pool] account %s marked healthy", name)
 			break
 		}
 	}
@@ -517,17 +523,22 @@ func (p *AccountPool) autoRecover() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		p.mu.Lock()
-		for _, acc := range p.accounts {
-			if !acc.Healthy && !acc.unhealthyAt.IsZero() && time.Since(acc.unhealthyAt) >= unhealthyRecoverAfter {
-				acc.Healthy = true
-				acc.unhealthyAt = time.Time{}
-				log.Printf("[pool] account %s auto-recovered after %s", acc.Name, unhealthyRecoverAfter)
+	for {
+		select {
+		case <-ticker.C:
+			p.mu.Lock()
+			for _, acc := range p.accounts {
+				if !acc.Healthy && !acc.unhealthyAt.IsZero() && time.Since(acc.unhealthyAt) >= unhealthyRecoverAfter {
+					acc.Healthy = true
+					acc.unhealthyAt = time.Time{}
+					logger.Info("[pool] account %s auto-recovered after %s", acc.Name, unhealthyRecoverAfter)
+				}
 			}
+			p.mu.Unlock()
+			p.signal()
+		case <-p.stop:
+			return
 		}
-		p.mu.Unlock()
-		p.signal()
 	}
 }
 
@@ -537,16 +548,26 @@ func (p *AccountPool) refreshProfiles() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		p.mu.Lock()
-		for _, acc := range p.accounts {
-			if updated := loadAccountProfile(p.cfg.AccountsDir, acc.Name); updated != nil {
-				acc.Profile = updated
+	for {
+		select {
+		case <-ticker.C:
+			p.mu.Lock()
+			for _, acc := range p.accounts {
+				if updated := loadAccountProfile(p.cfg.AccountsDir, acc.Name); updated != nil {
+					acc.Profile = updated
+				}
 			}
+			p.mu.Unlock()
+			logger.Info("[pool] account profiles refreshed")
+		case <-p.stop:
+			return
 		}
-		p.mu.Unlock()
-		log.Printf("[pool] account profiles refreshed")
 	}
+}
+
+// Stop signals all background goroutines to exit.
+func (p *AccountPool) Stop() {
+	close(p.stop)
 }
 
 // OnAccountAdded registers a callback for when a new account is added.
@@ -578,7 +599,7 @@ func (p *AccountPool) Status() []Account {
 			Profile:        a.Profile,
 			Busy:           a.Busy,
 			Active:         a.Active,
-			MaxConcurrency: a.effectiveMaxConcurrency(p.cfg.MaxConcurrency),
+			MaxConcurrency: a.effectiveMaxConcurrency(p.cfg.GetMaxConcurrency()),
 			Healthy:        a.Healthy,
 			RequestCount:   a.RequestCount,
 			Proxy:          a.Proxy,
@@ -593,7 +614,7 @@ func (p *AccountPool) Status() []Account {
 func (p *AccountPool) pickAvailable() *Account {
 	avail := make([]*Account, 0)
 	for _, a := range p.accounts {
-		if a.Healthy && a.Active < a.effectiveMaxConcurrency(p.cfg.MaxConcurrency) {
+		if a.Healthy && a.Active < a.effectiveMaxConcurrency(p.cfg.GetMaxConcurrency()) {
 			avail = append(avail, a)
 		}
 	}
@@ -616,7 +637,7 @@ func (p *AccountPool) release(acc *Account) {
 	if acc.Active < 0 {
 		acc.Active = 0
 	}
-	acc.Busy = acc.Active >= acc.effectiveMaxConcurrency(p.cfg.MaxConcurrency)
+	acc.Busy = acc.Active >= acc.effectiveMaxConcurrency(p.cfg.GetMaxConcurrency())
 	p.mu.Unlock()
 
 	p.signal()
@@ -660,7 +681,7 @@ func loadRemovedAccounts(accountsDir string) map[string]bool {
 func appendRemovedAccount(accountsDir, name string) {
 	f, err := os.OpenFile(removedFilePath(accountsDir), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Printf("[pool] failed to write .removed file: %v", err)
+		logger.Error("[pool] failed to write .removed file: %v", err)
 		return
 	}
 	defer f.Close()
@@ -697,6 +718,6 @@ func unremoveAccount(accountsDir, name string) {
 		content += "\n"
 	}
 	if err := os.WriteFile(removedFilePath(accountsDir), []byte(content), 0644); err != nil {
-		log.Printf("[pool] failed to update .removed file: %v", err)
+		logger.Error("[pool] failed to update .removed file: %v", err)
 	}
 }

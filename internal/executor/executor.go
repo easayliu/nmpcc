@@ -40,7 +40,7 @@ func Execute(ctx context.Context, cfg *config.Config, accountName, prompt string
 		return nil, fmt.Errorf("create sandbox: %w", err)
 	}
 
-	args := buildArgs(opts, cfg.MaxTurns)
+	args := buildArgs(opts, cfg.GetMaxTurns())
 
 	execCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()

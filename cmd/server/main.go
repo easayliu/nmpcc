@@ -15,12 +15,21 @@ import (
 
 	"nmpcc/internal/config"
 	"nmpcc/internal/handler"
+	"nmpcc/internal/logger"
 	"nmpcc/internal/logstore"
 	"nmpcc/internal/pool"
 )
 
 func main() {
 	godotenv.Load()
+
+	// Init log level from env (default: info)
+	if lvl := os.Getenv("LOG_LEVEL"); lvl != "" {
+		if !logger.SetLevelFromString(lvl) {
+			logger.Warn("unknown LOG_LEVEL %q, using info", lvl)
+		}
+	}
+	logger.Info("log level: %s", logger.GetLevelName())
 
 	cfg := config.Load()
 
@@ -29,7 +38,7 @@ func main() {
 
 	logs, err := logstore.New(cfg.AccountsDir)
 	if err != nil {
-		log.Printf("[warn] failed to open log database, using in-memory only: %v", err)
+		logger.Warn("failed to open log database, using in-memory only: %v", err)
 	}
 	if logs != nil {
 		defer logs.Close()
@@ -39,13 +48,13 @@ func main() {
 
 	status := p.Status()
 	if len(status) == 0 {
-		log.Printf("[init] No accounts found. Login on the server: CLAUDE_CONFIG_DIR=%s/<name> claude auth login", cfg.AccountsDir)
+		logger.Warn("No accounts found. Login on the server: CLAUDE_CONFIG_DIR=%s/<name> claude auth login", cfg.AccountsDir)
 	} else {
 		accountNames := make([]string, len(status))
 		for i, a := range status {
 			accountNames[i] = a.Name
 		}
-		log.Printf("[init] Loaded %d accounts: %s", len(accountNames), strings.Join(accountNames, ", "))
+		logger.Info("Loaded %d accounts: %s", len(accountNames), strings.Join(accountNames, ", "))
 	}
 
 	server := &http.Server{
@@ -54,13 +63,13 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("[nmpcc] listening on port %d", cfg.Port)
-		log.Println("  POST /v1/messages  - Anthropic-compatible messages API")
-		log.Println("  GET  /v1/models    - List available models")
-		log.Println("  GET  /status       - Account pool status")
+		logger.Info("listening on port %d", cfg.Port)
+		logger.Info("  POST /v1/messages  - Anthropic-compatible messages API")
+		logger.Info("  GET  /v1/models    - List available models")
+		logger.Info("  GET  /status       - Account pool status")
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("[nmpcc] server error: %v", err)
+			log.Fatalf("[FATAL] server error: %v", err)
 		}
 	}()
 
@@ -68,13 +77,15 @@ func main() {
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-quit
 
-	log.Printf("[nmpcc] %s received, shutting down...", sig)
+	logger.Info("%s received, shutting down...", sig)
+
+	p.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("[nmpcc] shutdown error: %v", err)
+		log.Fatalf("[FATAL] shutdown error: %v", err)
 	}
-	log.Println("[nmpcc] stopped")
+	logger.Info("stopped")
 }
