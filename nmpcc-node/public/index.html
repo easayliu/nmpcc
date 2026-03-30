@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NMPCC SDK - Account Manager</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f0f0f;--card:#1a1a1a;--border:#2a2a2a;--text:#e0e0e0;--dim:#888;--accent:#6c8cff;--green:#4caf50;--orange:#ff9800;--red:#ef5350;--yellow:#fdd835;--purple:#b39ddb}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,monospace;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
+.container{max-width:960px;margin:0 auto}
+h1{font-size:1.4em;font-weight:600;margin-bottom:4px}
+.subtitle{color:var(--dim);font-size:.85em;margin-bottom:24px}
+.stats{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 16px;min-width:120px}
+.stat-value{font-size:1.6em;font-weight:700;color:var(--accent)}
+.stat-label{font-size:.75em;color:var(--dim);margin-top:2px}
+.section{margin-bottom:24px}
+.section-title{font-size:.9em;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:.8em;cursor:pointer;font-family:inherit;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-sm{padding:5px 10px;font-size:.75em}
+.btn-red{background:var(--red)}
+.btn-green{background:var(--green)}
+.btn-orange{background:var(--orange);color:#000}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.accounts-grid{display:flex;flex-direction:column;gap:10px}
+.account-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:12px;transition:border-color .15s}
+.account-card:hover{border-color:#444}
+.account-status{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.status-active{background:var(--green)}
+.status-expired{background:var(--orange)}
+.status-cooldown{background:var(--yellow)}
+.status-error{background:var(--red)}
+.status-pending{background:var(--dim)}
+.account-info{flex:1;min-width:0}
+.account-name{font-weight:600;font-size:.9em}
+.account-meta{font-size:.75em;color:var(--dim);margin-top:2px;display:flex;gap:12px;flex-wrap:wrap}
+.account-actions{display:flex;gap:6px;flex-shrink:0}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:90%;max-width:480px}
+.modal h2{font-size:1.1em;margin-bottom:16px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:.8em;color:var(--dim);margin-bottom:4px}
+.form-group input,.form-group select,.form-group textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:inherit;font-size:.85em}
+.form-group textarea{height:80px;resize:vertical}
+.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 18px;font-size:.85em;z-index:200;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+.toast.error{border-color:var(--red)}
+.toast.success{border-color:var(--green)}
+.oauth-url{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:.75em;word-break:break-all;margin:12px 0;max-height:120px;overflow-y:auto;user-select:all}
+.tag{font-size:.7em;padding:2px 6px;border-radius:4px;background:var(--border);color:var(--dim)}
+.tag-allowed{background:#1b3a1b;color:var(--green)}
+.tag-rejected{background:#3a1b1b;color:var(--red)}
+.ratelimit-row{font-size:.72em;color:var(--dim);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap}
+.ratelimit-row .rl-item{display:flex;gap:4px;align-items:center}
+.rl-bar-wrap{width:60px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle}
+.rl-bar{height:100%;border-radius:3px;background:var(--accent)}
+.rl-bar.high{background:var(--red)}
+.rl-bar.mid{background:var(--orange)}
+.empty{text-align:center;padding:40px;color:var(--dim);font-size:.9em}
+@media(max-width:600px){.stats{flex-direction:column}.account-card{flex-direction:column;align-items:flex-start}.account-actions{width:100%;justify-content:flex-end}}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>NMPCC SDK</h1>
+  <p class="subtitle">Claude Code Proxy - Account Manager</p>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-value" id="s-active">-</div><div class="stat-label">Active</div></div>
+    <div class="stat"><div class="stat-value" id="s-total">-</div><div class="stat-label">Total</div></div>
+    <div class="stat"><div class="stat-value" id="s-requests">-</div><div class="stat-label">Requests</div></div>
+    <div class="stat"><div class="stat-value" id="s-input-tokens">-</div><div class="stat-label">Input Tokens</div></div>
+    <div class="stat"><div class="stat-value" id="s-output-tokens">-</div><div class="stat-label">Output Tokens</div></div>
+    <div class="stat"><div class="stat-value" id="s-cache-read">-</div><div class="stat-label">Cache Read</div></div>
+    <div class="stat"><div class="stat-value" id="s-cache-write">-</div><div class="stat-label">Cache Write</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      Accounts
+      <button class="btn btn-sm btn-green" onclick="showModal('oauth')">+ OAuth Login</button>
+      <button class="btn btn-sm btn-ghost" onclick="showModal('manual')">+ Manual Add</button>
+    </div>
+    <div id="accounts-list" class="accounts-grid">
+      <div class="empty">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- OAuth Login Modal -->
+<div class="modal-overlay" id="modal-oauth">
+  <div class="modal">
+    <h2>OAuth Login</h2>
+    <div id="oauth-step1">
+      <div class="form-group">
+        <label>Account Name</label>
+        <input id="oauth-name" placeholder="e.g. my-account" />
+      </div>
+      <div class="form-group">
+        <label>Provider</label>
+        <select id="oauth-provider">
+          <option value="console">Anthropic Console</option>
+          <option value="claude.ai">Claude.ai</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="hideModal('oauth')">Cancel</button>
+        <button class="btn" id="oauth-start-btn" onclick="startOAuth()">Start Login</button>
+      </div>
+    </div>
+    <div id="oauth-step2" style="display:none">
+      <p style="font-size:.85em;margin-bottom:8px">Open this URL in your browser to authorize:</p>
+      <div class="oauth-url" id="oauth-url"></div>
+      <button class="btn btn-sm" onclick="copyUrl()">Copy URL</button>
+      <p style="font-size:.85em;margin-top:14px;margin-bottom:6px">After authorizing, paste the full callback URL here:<br><span style="color:var(--dim);font-size:.9em">（浏览器会跳转到 platform.claude.com/oauth/code/callback?code=...&state=...）</span></p>
+      <div class="form-group" style="margin-bottom:8px">
+        <input id="oauth-callback-input" placeholder="粘贴回调 URL 或 code#state（如 je7WbM...#JKV9ag...）" style="font-size:.78em" />
+      </div>
+      <button class="btn btn-sm btn-green" onclick="submitCallback()">Submit</button>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="hideModal('oauth');refresh()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Add Modal -->
+<div class="modal-overlay" id="modal-manual">
+  <div class="modal">
+    <h2>Add Account Manually</h2>
+    <div class="form-group">
+      <label>Account Name</label>
+      <input id="manual-name" placeholder="e.g. api-account" />
+    </div>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="manual-type" onchange="toggleManualFields()">
+        <option value="apiKey">API Key</option>
+        <option value="oauth">OAuth Token</option>
+      </select>
+    </div>
+    <div id="manual-apikey-fields">
+      <div class="form-group">
+        <label>API Key</label>
+        <input id="manual-apikey" placeholder="sk-ant-..." />
+      </div>
+    </div>
+    <div id="manual-oauth-fields" style="display:none">
+      <div class="form-group">
+        <label>Access Token</label>
+        <input id="manual-access-token" placeholder="sk-ant-oat..." />
+      </div>
+      <div class="form-group">
+        <label>Refresh Token (optional)</label>
+        <input id="manual-refresh-token" placeholder="sk-ant-ort..." />
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="hideModal('manual')">Cancel</button>
+      <button class="btn btn-green" onclick="addManual()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  setTimeout(() => el.className = 'toast', 3000);
+}
+
+function showModal(id) {
+  document.getElementById('modal-'+id).classList.add('show');
+  if (id === 'oauth') {
+    document.getElementById('oauth-step1').style.display = '';
+    document.getElementById('oauth-step2').style.display = 'none';
+  }
+}
+function hideModal(id) {
+  document.getElementById('modal-'+id).classList.remove('show');
+}
+
+function toggleManualFields() {
+  const type = document.getElementById('manual-type').value;
+  document.getElementById('manual-apikey-fields').style.display = type === 'apiKey' ? '' : 'none';
+  document.getElementById('manual-oauth-fields').style.display = type === 'oauth' ? '' : 'none';
+}
+
+function renderRateLimits(rl) {
+  function statusTag(s) {
+    if (!s) return '';
+    const cls = s === 'allowed' ? 'tag-allowed' : s === 'rejected' ? 'tag-rejected' : '';
+    return `<span class="tag ${cls}">${esc(s)}</span>`;
+  }
+  function bar(util) {
+    const pct = Math.round(parseFloat(util || 0) * 100);
+    const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : '';
+    return `<span class="rl-bar-wrap"><span class="rl-bar ${cls}" style="width:${pct}%"></span></span>${pct}%`;
+  }
+  function resetIn(ts) {
+    if (!ts) return '';
+    const diff = parseInt(ts, 10) * 1000 - Date.now();
+    if (diff <= 0) return 'reset';
+    if (diff < 3600000) return 'rst ' + Math.round(diff/60000) + 'm';
+    return 'rst ' + Math.round(diff/3600000) + 'h';
+  }
+  const items = [];
+  if (rl.fiveHour?.status) items.push(`<span class="rl-item">5h ${statusTag(rl.fiveHour.status)} ${bar(rl.fiveHour.utilization)} ${resetIn(rl.fiveHour.reset)}</span>`);
+  if (rl.sevenDay?.status) items.push(`<span class="rl-item">7d ${statusTag(rl.sevenDay.status)} ${bar(rl.sevenDay.utilization)} ${resetIn(rl.sevenDay.reset)}</span>`);
+  if (rl.overage?.status) items.push(`<span class="rl-item">overage ${statusTag(rl.overage.status)}${rl.overage.disabledReason ? ' <span style="color:var(--dim)">(' + esc(rl.overage.disabledReason) + ')</span>' : ''}</span>`);
+  if (rl.current?.status) items.push(`<span class="rl-item">current ${statusTag(rl.current.status)}${rl.current.representativeClaim ? ' <span style="color:var(--dim)">' + esc(rl.current.representativeClaim) + '</span>' : ''} ${resetIn(rl.current.reset)}</span>`);
+  if (!items.length) return '';
+  return `<div class="ratelimit-row">${items.join('')}</div>`;
+}
+
+async function refresh() {
+  try {
+    const [statusRes, accountsRes] = await Promise.all([
+      fetch(API + '/status'),
+      fetch(API + '/accounts'),
+    ]);
+    const status = await statusRes.json();
+    const { accounts } = await accountsRes.json();
+    const rateLimits = status.rateLimits || {};
+
+    const active = accounts.filter(a => a.status === 'active').length;
+    document.getElementById('s-active').textContent = active;
+    document.getElementById('s-total').textContent = accounts.length;
+    document.getElementById('s-requests').textContent = status.requestCount || 0;
+    document.getElementById('s-input-tokens').textContent = fmtTokens(status.totalInputTokens || 0);
+    document.getElementById('s-output-tokens').textContent = fmtTokens(status.totalOutputTokens || 0);
+    document.getElementById('s-cache-read').textContent = fmtTokens(status.totalCacheReadTokens || 0);
+    document.getElementById('s-cache-write').textContent = fmtTokens(status.totalCacheCreationTokens || 0);
+
+    const list = document.getElementById('accounts-list');
+    if (accounts.length === 0) {
+      list.innerHTML = '<div class="empty">No accounts. Add one to get started.</div>';
+      return;
+    }
+
+    list.innerHTML = accounts.map(a => {
+      const rl = rateLimits[a.name];
+      const rlHtml = rl ? renderRateLimits(rl) : '';
+      return `
+      <div class="account-card">
+        <div class="account-status status-${a.status}"></div>
+        <div class="account-info">
+          <div class="account-name">${esc(a.name)} <span class="tag">${a.type || 'oauth'}</span> <span class="tag">${a.status}</span></div>
+          <div class="account-meta">
+            ${a.email ? '<span>' + esc(a.email) + '</span>' : ''}
+            ${a.organization ? '<span>' + esc(a.organization) + '</span>' : ''}
+            ${a.requestCount ? '<span>' + a.requestCount + ' reqs</span>' : ''}
+            ${a.expiresAt ? '<span>exp ' + shortTime(a.expiresAt) + '</span>' : ''}
+            ${a.lastError ? '<span style="color:var(--red)">' + esc(a.lastError) + '</span>' : ''}
+            ${a.cooldownUntil ? '<span style="color:var(--yellow)">cooldown until ' + shortTime(a.cooldownUntil) + '</span>' : ''}
+          </div>
+          ${rlHtml}
+        </div>
+        <div class="account-actions">
+          <button class="btn btn-sm btn-ghost" onclick="refreshAccount('${esc(a.name)}')">Refresh</button>
+          <button class="btn btn-sm btn-red" onclick="deleteAccount('${esc(a.name)}')">Delete</button>
+        </div>
+      </div>
+    `}).join('');
+  } catch (e) {
+    document.getElementById('accounts-list').innerHTML = '<div class="empty">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtTokens(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+function shortTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = d - now;
+  if (diff < 0) return 'expired';
+  if (diff < 3600000) return Math.round(diff/60000) + 'm';
+  if (diff < 86400000) return Math.round(diff/3600000) + 'h';
+  return Math.round(diff/86400000) + 'd';
+}
+
+async function startOAuth() {
+  const name = document.getElementById('oauth-name').value.trim();
+  if (!name) return toast('Name is required', 'error');
+  const provider = document.getElementById('oauth-provider').value;
+  const btn = document.getElementById('oauth-start-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch(API + '/accounts/login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, provider }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || 'Failed');
+    document.getElementById('oauth-url').textContent = data.authorizeUrl;
+    document.getElementById('oauth-callback-input').value = '';
+    window._oauthAccountName = name;
+    document.getElementById('oauth-step1').style.display = 'none';
+    document.getElementById('oauth-step2').style.display = '';
+    // Poll for completion
+    pollAuth(name);
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function copyUrl() {
+  const url = document.getElementById('oauth-url').textContent;
+  navigator.clipboard.writeText(url).then(() => toast('Copied!')).catch(() => toast('Copy failed', 'error'));
+}
+
+function copyCallbackUrl() {
+  const url = document.getElementById('oauth-callback-url').textContent;
+  navigator.clipboard.writeText(url).then(() => toast('Copied!')).catch(() => toast('Copy failed', 'error'));
+}
+
+async function submitCallback() {
+  const raw = document.getElementById('oauth-callback-input').value.trim();
+  if (!raw) return toast('Please paste the callback URL', 'error');
+  const name = window._oauthAccountName;
+  if (!name) return toast('No pending auth session', 'error');
+
+  let code;
+  try {
+    // 支持三种格式：
+    // 1. 完整 URL: https://platform.claude.com/oauth/code/callback?code=xxx&state=yyy
+    // 2. code#state 格式: je7WbM...#JKV9ag...
+    // 3. 纯 code
+    if (raw.includes('://')) {
+      const url = new URL(raw);
+      code = url.searchParams.get('code');
+      // 有些回调 code 和 state 在 fragment 里
+      if (!code && url.hash) {
+        const hashParams = new URLSearchParams(url.hash.slice(1));
+        code = hashParams.get('code') || url.hash.slice(1).split('#')[0];
+      }
+    } else if (raw.includes('#')) {
+      // code#state 格式，取 # 之前的部分
+      code = raw.split('#')[0];
+    } else {
+      // 纯 code
+      code = raw;
+    }
+  } catch {
+    return toast('Invalid input', 'error');
+  }
+  if (!code) return toast('No code found', 'error');
+
+  try {
+    const res = await fetch(API + '/accounts/login/complete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name, code }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || 'Failed');
+    toast(name + ' authorized!');
+    hideModal('oauth');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function pollAuth(name) {
+  for (let i = 0; i < 360; i++) { // 30 min max
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const res = await fetch(API + '/accounts/' + encodeURIComponent(name));
+      const data = await res.json();
+      if (data.status === 'active') {
+        toast(name + ' authorized!');
+        hideModal('oauth');
+        refresh();
+        return;
+      }
+    } catch {}
+  }
+}
+
+async function addManual() {
+  const name = document.getElementById('manual-name').value.trim();
+  if (!name) return toast('Name is required', 'error');
+  const type = document.getElementById('manual-type').value;
+
+  let body = { name };
+  if (type === 'apiKey') {
+    body.apiKey = document.getElementById('manual-apikey').value.trim();
+    if (!body.apiKey) return toast('API Key is required', 'error');
+  } else {
+    body.accessToken = document.getElementById('manual-access-token').value.trim();
+    body.refreshToken = document.getElementById('manual-refresh-token').value.trim() || undefined;
+    if (!body.accessToken) return toast('Access Token is required', 'error');
+  }
+
+  try {
+    const res = await fetch(API + '/accounts/add', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || 'Failed');
+    toast(name + ' added!');
+    hideModal('manual');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function refreshAccount(name) {
+  try {
+    const res = await fetch(API + '/accounts/' + encodeURIComponent(name) + '/refresh', { method: 'POST' });
+    const data = await res.json();
+    toast(data.success ? name + ' refreshed' : 'Refresh failed: ' + (data.error||''), data.success ? 'success' : 'error');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function deleteAccount(name) {
+  if (!confirm('Delete account "' + name + '"?')) return;
+  try {
+    await fetch(API + '/accounts/' + encodeURIComponent(name), { method: 'DELETE' });
+    toast(name + ' deleted');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// Init
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

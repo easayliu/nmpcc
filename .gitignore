@@ -146,3 +146,6 @@ nmpcc-linux-amd64
 log.txt
 *.sessions.json
 runtime.json
+
+claude-code-src
+.claude
