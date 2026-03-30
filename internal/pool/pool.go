@@ -89,6 +89,7 @@ type Account struct {
 	Usage          *UsageInfo      `json:"usage,omitempty"`
 	PlanUsage      *PlanUsage      `json:"planUsage,omitempty"`
 	lastUsed       time.Time
+	unhealthyAt    time.Time // when the account was marked unhealthy
 }
 
 // effectiveMaxConcurrency returns the account's limit, or the global default.
@@ -145,11 +146,13 @@ func New(cfg *config.Config) *AccountPool {
 			Proxy:          accProxy[name],
 		}
 	}
-	return &AccountPool{
+	pool := &AccountPool{
 		accounts: accounts,
 		notify:   make(chan struct{}, 1),
 		cfg:      cfg,
 	}
+	go pool.autoRecover()
+	return pool
 }
 
 // discoverAccounts scans the accounts directory for subdirectories
@@ -284,6 +287,7 @@ func (p *AccountPool) MarkUnhealthy(name string) {
 		if acc.Name == name {
 			acc.Healthy = false
 			acc.Busy = false
+			acc.unhealthyAt = time.Now()
 			log.Printf("[pool] account %s marked unhealthy", name)
 			break
 		}
@@ -502,6 +506,28 @@ func (p *AccountPool) MarkHealthy(name string) {
 	}
 	// Notify waiters
 	p.signal()
+}
+
+const unhealthyRecoverAfter = 2 * time.Minute
+
+// autoRecover periodically checks for unhealthy accounts and recovers them
+// after a cooldown period.
+func (p *AccountPool) autoRecover() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		p.mu.Lock()
+		for _, acc := range p.accounts {
+			if !acc.Healthy && !acc.unhealthyAt.IsZero() && time.Since(acc.unhealthyAt) >= unhealthyRecoverAfter {
+				acc.Healthy = true
+				acc.unhealthyAt = time.Time{}
+				log.Printf("[pool] account %s auto-recovered after %s", acc.Name, unhealthyRecoverAfter)
+			}
+		}
+		p.mu.Unlock()
+		p.signal()
+	}
 }
 
 // OnAccountAdded registers a callback for when a new account is added.

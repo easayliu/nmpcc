@@ -171,6 +171,11 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !body.Stream {
+		sendError(w, http.StatusBadRequest, "Only streaming requests are supported, set \"stream\": true")
+		return
+	}
+
 	prompt := messagesToPrompt(body.Messages)
 	if prompt == "" {
 		sendError(w, http.StatusBadRequest, "Empty prompt")
