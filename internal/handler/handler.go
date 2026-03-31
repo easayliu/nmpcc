@@ -258,6 +258,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, acc *pool
 	w.WriteHeader(http.StatusOK)
 
 	sf := formatter.NewStreamFormatter(w, opts.Model)
+	defer sf.Stop()
 
 	result, err := executor.Execute(r.Context(), h.cfg, acc.Name, prompt, opts, func(event map[string]any) {
 		sf.HandleEvent(event)

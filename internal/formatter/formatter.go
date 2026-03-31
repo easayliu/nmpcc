@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -84,11 +85,13 @@ func usageFromMap(m map[string]any) usageData {
 
 // StreamFormatter writes Anthropic-compatible SSE events to an HTTP response.
 type StreamFormatter struct {
+	mu           sync.Mutex
 	w            http.ResponseWriter
 	flusher      http.Flusher
 	model        string
 	messageID    string
 	started      bool
+	done         chan struct{}
 	outputTokens int
 	inputTokens  int
 	cacheRead    int
@@ -101,15 +104,46 @@ func NewStreamFormatter(w http.ResponseWriter, model string) *StreamFormatter {
 		model = DefaultModel
 	}
 	flusher, _ := w.(http.Flusher)
-	return &StreamFormatter{
-		w:         w,
-		flusher:   flusher,
-		model:     model,
-		messageID: generateMessageID(),
+	sf := &StreamFormatter{
+		w:           w,
+		flusher:     flusher,
+		model:       model,
+		messageID:   generateMessageID(),
+		done:        make(chan struct{}),
+		lastEventAt: time.Now(),
+	}
+	go sf.keepaliveLoop()
+	return sf
+}
+
+// keepaliveLoop sends periodic pings to prevent client/proxy timeouts.
+// Only sends pings after the stream has started (usage data available).
+func (sf *StreamFormatter) keepaliveLoop() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-sf.done:
+			return
+		case <-ticker.C:
+			sf.mu.Lock()
+			if sf.started && time.Since(sf.lastEventAt) >= 15*time.Second {
+				sf.writeSSELocked("ping", map[string]any{"type": "ping"})
+			}
+			sf.mu.Unlock()
+		}
 	}
 }
 
+// Stop terminates the keepalive loop. Must be called when streaming is done.
+func (sf *StreamFormatter) Stop() {
+	close(sf.done)
+}
+
 func (sf *StreamFormatter) HandleEvent(event map[string]any) {
+	sf.mu.Lock()
+	defer sf.mu.Unlock()
+
 	t, _ := event["type"].(string)
 
 	switch t {
@@ -123,7 +157,7 @@ func (sf *StreamFormatter) HandleEvent(event map[string]any) {
 				sf.cacheCreate = toInt(usage["cache_creation_input_tokens"])
 			}
 
-			sf.ensureStarted()
+			sf.ensureStartedLocked()
 
 			if content, ok := msg["content"].([]any); ok {
 				for _, c := range content {
@@ -133,7 +167,7 @@ func (sf *StreamFormatter) HandleEvent(event map[string]any) {
 					}
 					if bt, _ := block["type"].(string); bt == "text" {
 						if text, _ := block["text"].(string); text != "" {
-							sf.writeSSE("content_block_delta", map[string]any{
+							sf.writeSSELocked("content_block_delta", map[string]any{
 								"type":  "content_block_delta",
 								"index": 0,
 								"delta": map[string]any{"type": "text_delta", "text": text},
@@ -145,30 +179,24 @@ func (sf *StreamFormatter) HandleEvent(event map[string]any) {
 		}
 
 	case "content_block_delta":
-		sf.ensureStarted()
+		sf.ensureStartedLocked()
 		delta, _ := event["delta"].(map[string]any)
 		text, _ := delta["text"].(string)
 		if text != "" {
-			sf.writeSSE("content_block_delta", map[string]any{
+			sf.writeSSELocked("content_block_delta", map[string]any{
 				"type":  "content_block_delta",
 				"index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": text},
 			})
 		}
 
-	default:
-		// During thinking or other unhandled events, send periodic pings
-		// to keep the connection alive and prevent client timeouts.
-		sf.maybePing()
-		return
-
 	case "result":
 		hadContent := sf.started
-		sf.ensureStarted()
+		sf.ensureStartedLocked()
 
 		if !hadContent {
 			if text, _ := event["result"].(string); text != "" {
-				sf.writeSSE("content_block_delta", map[string]any{
+				sf.writeSSELocked("content_block_delta", map[string]any{
 					"type":  "content_block_delta",
 					"index": 0,
 					"delta": map[string]any{"type": "text_delta", "text": text},
@@ -183,36 +211,38 @@ func (sf *StreamFormatter) HandleEvent(event map[string]any) {
 			}
 		}
 
-		sf.writeSSE("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
-		sf.writeSSE("message_delta", map[string]any{
+		sf.writeSSELocked("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+		sf.writeSSELocked("message_delta", map[string]any{
 			"type":  "message_delta",
 			"delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil},
 			"usage": map[string]any{"output_tokens": outTokens},
 		})
-		sf.writeSSE("message_stop", map[string]any{"type": "message_stop"})
+		sf.writeSSELocked("message_stop", map[string]any{"type": "message_stop"})
 	}
 }
 
 func (sf *StreamFormatter) End() {
+	sf.mu.Lock()
+	defer sf.mu.Unlock()
 	if !sf.started {
-		sf.ensureStarted()
+		sf.ensureStartedLocked()
 	}
-	sf.writeSSE("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
-	sf.writeSSE("message_delta", map[string]any{
+	sf.writeSSELocked("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+	sf.writeSSELocked("message_delta", map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil},
 		"usage": map[string]any{"output_tokens": 0},
 	})
-	sf.writeSSE("message_stop", map[string]any{"type": "message_stop"})
+	sf.writeSSELocked("message_stop", map[string]any{"type": "message_stop"})
 }
 
-func (sf *StreamFormatter) ensureStarted() {
+func (sf *StreamFormatter) ensureStartedLocked() {
 	if sf.started {
 		return
 	}
 	sf.started = true
 
-	sf.writeSSE("message_start", map[string]any{
+	sf.writeSSELocked("message_start", map[string]any{
 		"type": "message_start",
 		"message": map[string]any{
 			"id":            sf.messageID,
@@ -231,26 +261,17 @@ func (sf *StreamFormatter) ensureStarted() {
 		},
 	})
 
-	sf.writeSSE("content_block_start", map[string]any{
+	sf.writeSSELocked("content_block_start", map[string]any{
 		"type":          "content_block_start",
 		"index":         0,
 		"content_block": map[string]any{"type": "text", "text": ""},
 	})
 
-	sf.writeSSE("ping", map[string]any{"type": "ping"})
+	sf.writeSSELocked("ping", map[string]any{"type": "ping"})
 }
 
-// maybePing sends a ping if no SSE event was sent recently, keeping the
-// connection alive during long thinking phases. Only sends pings after
-// the stream has already started (i.e. after the assistant event with
-// usage data has been processed).
-func (sf *StreamFormatter) maybePing() {
-	if sf.started && time.Since(sf.lastEventAt) >= 15*time.Second {
-		sf.writeSSE("ping", map[string]any{"type": "ping"})
-	}
-}
-
-func (sf *StreamFormatter) writeSSE(event string, data any) {
+// writeSSELocked writes an SSE event. Caller must hold sf.mu.
+func (sf *StreamFormatter) writeSSELocked(event string, data any) {
 	b, err := json.Marshal(data)
 	if err != nil {
 		return
