@@ -241,10 +241,11 @@ func (sf *StreamFormatter) ensureStarted() {
 }
 
 // maybePing sends a ping if no SSE event was sent recently, keeping the
-// connection alive during long thinking phases.
+// connection alive during long thinking phases. Only sends pings after
+// the stream has already started (i.e. after the assistant event with
+// usage data has been processed).
 func (sf *StreamFormatter) maybePing() {
-	if time.Since(sf.lastEventAt) >= 15*time.Second {
-		sf.ensureStarted()
+	if sf.started && time.Since(sf.lastEventAt) >= 15*time.Second {
 		sf.writeSSE("ping", map[string]any{"type": "ping"})
 	}
 }
