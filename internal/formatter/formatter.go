@@ -92,7 +92,6 @@ type StreamFormatter struct {
 	model        string
 	messageID    string
 	started      bool
-	hasContent   bool // true once actual text has been sent to client
 	done         chan struct{}
 	outputTokens int
 	inputTokens  int
@@ -183,7 +182,6 @@ func (sf *StreamFormatter) HandleEvent(event map[string]any) {
 					}
 					if bt, _ := block["type"].(string); bt == "text" {
 						if text, _ := block["text"].(string); text != "" {
-							sf.hasContent = true
 							sf.writeSSELocked("content_block_delta", map[string]any{
 								"type":  "content_block_delta",
 								"index": 0,
@@ -200,7 +198,6 @@ func (sf *StreamFormatter) HandleEvent(event map[string]any) {
 		delta, _ := event["delta"].(map[string]any)
 		text, _ := delta["text"].(string)
 		if text != "" {
-			sf.hasContent = true
 			sf.writeSSELocked("content_block_delta", map[string]any{
 				"type":  "content_block_delta",
 				"index": 0,
@@ -211,17 +208,15 @@ func (sf *StreamFormatter) HandleEvent(event map[string]any) {
 	case "result":
 		sf.ensureStartedLocked()
 
-		// Send result text if no text content was streamed yet via
-		// assistant or content_block_delta events (e.g. when all prior
-		// assistant events only contained thinking/tool_use blocks).
-		if !sf.hasContent {
-			if text, _ := event["result"].(string); text != "" {
-				sf.writeSSELocked("content_block_delta", map[string]any{
-					"type":  "content_block_delta",
-					"index": 0,
-					"delta": map[string]any{"type": "text_delta", "text": text},
-				})
-			}
+		// Always send the result text. The "result" field contains the final
+		// answer from the CLI, which is distinct from any intermediate text
+		// in assistant events (those are tool-call reasoning, not the final reply).
+		if text, _ := event["result"].(string); text != "" {
+			sf.writeSSELocked("content_block_delta", map[string]any{
+				"type":  "content_block_delta",
+				"index": 0,
+				"delta": map[string]any{"type": "text_delta", "text": text},
+			})
 		}
 
 		outTokens := sf.outputTokens
