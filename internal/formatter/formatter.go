@@ -116,10 +116,12 @@ func NewStreamFormatter(w http.ResponseWriter, model string) *StreamFormatter {
 	return sf
 }
 
-// keepaliveLoop sends periodic pings to prevent client/proxy timeouts.
-// Only sends pings after the stream has started (usage data available).
+// keepaliveLoop sends periodic keepalives to prevent client/proxy timeouts.
+// Before the stream starts, it sends SSE comments (": keepalive\n\n") which
+// are silently ignored by SSE clients but keep the TCP connection alive.
+// After the stream starts, it sends proper ping events.
 func (sf *StreamFormatter) keepaliveLoop() {
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -127,8 +129,17 @@ func (sf *StreamFormatter) keepaliveLoop() {
 			return
 		case <-ticker.C:
 			sf.mu.Lock()
-			if sf.started && time.Since(sf.lastEventAt) >= 15*time.Second {
-				sf.writeSSELocked("ping", map[string]any{"type": "ping"})
+			if time.Since(sf.lastEventAt) >= 10*time.Second {
+				if sf.started {
+					sf.writeSSELocked("ping", map[string]any{"type": "ping"})
+				} else {
+					// SSE comment: keeps connection alive without starting the event stream
+					fmt.Fprint(sf.w, ": keepalive\n\n")
+					sf.lastEventAt = time.Now()
+					if sf.flusher != nil {
+						sf.flusher.Flush()
+					}
+				}
 			}
 			sf.mu.Unlock()
 		}
