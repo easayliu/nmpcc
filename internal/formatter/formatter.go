@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 const DefaultModel = "claude-sonnet-4-20250514"
@@ -92,6 +93,7 @@ type StreamFormatter struct {
 	inputTokens  int
 	cacheRead    int
 	cacheCreate  int
+	lastEventAt  time.Time // track last sent event for keepalive
 }
 
 func NewStreamFormatter(w http.ResponseWriter, model string) *StreamFormatter {
@@ -146,11 +148,19 @@ func (sf *StreamFormatter) HandleEvent(event map[string]any) {
 		sf.ensureStarted()
 		delta, _ := event["delta"].(map[string]any)
 		text, _ := delta["text"].(string)
-		sf.writeSSE("content_block_delta", map[string]any{
-			"type":  "content_block_delta",
-			"index": 0,
-			"delta": map[string]any{"type": "text_delta", "text": text},
-		})
+		if text != "" {
+			sf.writeSSE("content_block_delta", map[string]any{
+				"type":  "content_block_delta",
+				"index": 0,
+				"delta": map[string]any{"type": "text_delta", "text": text},
+			})
+		}
+
+	default:
+		// During thinking or other unhandled events, send periodic pings
+		// to keep the connection alive and prevent client timeouts.
+		sf.maybePing()
+		return
 
 	case "result":
 		hadContent := sf.started
@@ -230,12 +240,22 @@ func (sf *StreamFormatter) ensureStarted() {
 	sf.writeSSE("ping", map[string]any{"type": "ping"})
 }
 
+// maybePing sends a ping if no SSE event was sent recently, keeping the
+// connection alive during long thinking phases.
+func (sf *StreamFormatter) maybePing() {
+	if time.Since(sf.lastEventAt) >= 15*time.Second {
+		sf.ensureStarted()
+		sf.writeSSE("ping", map[string]any{"type": "ping"})
+	}
+}
+
 func (sf *StreamFormatter) writeSSE(event string, data any) {
 	b, err := json.Marshal(data)
 	if err != nil {
 		return
 	}
 	fmt.Fprintf(sf.w, "event: %s\ndata: %s\n\n", event, b)
+	sf.lastEventAt = time.Now()
 	if sf.flusher != nil {
 		sf.flusher.Flush()
 	}
