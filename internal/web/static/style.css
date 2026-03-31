@@ -135,14 +135,14 @@ a, button, span, p, h1, h2, h3, td, th, svg { transition-duration: 0s !important
 .safe-area-pt { padding-top: env(safe-area-inset-top, 0px); }
 
 /* Pull to refresh */
-#pullIndicator {
+.pull-indicator, #pullIndicator {
   position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center;
   height: 0; overflow: hidden; transition: height 0.2s ease; z-index: 10; pointer-events: none;
 }
-#pullIndicator.pulling { transition: none; }
-#pullIndicator .pull-icon { transition: transform 0.2s ease; }
-#pullIndicator.ready .pull-icon { transform: rotate(180deg); }
-#pullIndicator.refreshing .pull-icon { animation: spin 0.6s linear infinite; }
+.pull-indicator.pulling, #pullIndicator.pulling { transition: none; }
+.pull-indicator .pull-icon, #pullIndicator .pull-icon { transition: transform 0.2s ease; }
+.pull-indicator.ready .pull-icon, #pullIndicator.ready .pull-icon { transform: rotate(180deg); }
+.pull-indicator.refreshing .pull-icon, #pullIndicator.refreshing .pull-icon { animation: spin 0.6s linear infinite; }
 
 /* Sonnet usage bar gradient */
 .usage-bar-gradient {

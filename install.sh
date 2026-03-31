@@ -22,6 +22,33 @@ error() { echo -e "${RED}[x]${NC} $*"; exit 1; }
 
 [[ $EUID -eq 0 ]] || error "Please run as root: sudo bash install.sh"
 
+# ── Uninstall ──
+if [[ "${1:-}" == "--uninstall" ]]; then
+  warn "This will remove nmpcc binary, service, and config."
+  warn "Accounts in $ACCOUNTS_DIR will NOT be deleted."
+  read -rp "Continue? [y/N] " confirm
+  [[ "$confirm" =~ ^[Yy]$ ]] || { info "Aborted."; exit 0; }
+
+  info "Stopping service..."
+  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+  systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+
+  rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+  systemctl daemon-reload
+  info "Service removed"
+
+  rm -f "${INSTALL_DIR}/nmpcc"
+  info "Binary removed"
+
+  rm -f "$CONFIG_FILE"
+  info "Config removed"
+
+  echo ""
+  info "Uninstall complete!"
+  [[ -d "$ACCOUNTS_DIR" ]] && warn "Accounts directory preserved: $ACCOUNTS_DIR (delete manually if needed)"
+  exit 0
+fi
+
 # Detect arch
 ARCH=$(uname -m)
 case "$ARCH" in
