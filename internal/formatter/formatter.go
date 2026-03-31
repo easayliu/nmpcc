@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"nmpcc/internal/logger"
 	"sync"
 	"time"
 )
@@ -129,10 +130,13 @@ func (sf *StreamFormatter) keepaliveLoop() {
 			return
 		case <-ticker.C:
 			sf.mu.Lock()
-			if time.Since(sf.lastEventAt) >= 10*time.Second {
+			elapsed := time.Since(sf.lastEventAt)
+			if elapsed >= 10*time.Second {
 				if sf.started {
+					logger.Debug("[keepalive] sending ping (started=true, idle=%s)", elapsed)
 					sf.writeSSELocked("ping", map[string]any{"type": "ping"})
 				} else {
+					logger.Debug("[keepalive] sending SSE comment (started=false, idle=%s)", elapsed)
 					// SSE comment: keeps connection alive without starting the event stream
 					fmt.Fprint(sf.w, ": keepalive\n\n")
 					sf.lastEventAt = time.Now()

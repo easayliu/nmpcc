@@ -15,6 +15,7 @@ import (
 
 	"crypto/rand"
 	"encoding/hex"
+	"nmpcc/internal/logger"
 )
 
 type Options struct {
@@ -83,6 +84,7 @@ func Execute(ctx context.Context, cfg *config.Config, accountName, prompt string
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	logger.Debug("[executor] CLI started, waiting for events...")
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -91,12 +93,16 @@ func Execute(ctx context.Context, cfg *config.Config, accountName, prompt string
 
 		var event map[string]any
 		if err := json.Unmarshal(line, &event); err != nil {
+			logger.Debug("[executor] non-JSON line: %s", string(line))
 			continue
 		}
 
+		t, _ := event["type"].(string)
+		logger.Debug("[executor] event type=%s", t)
+
 		allEvents = append(allEvents, event)
 
-		if t, _ := event["type"].(string); t == "result" {
+		if t == "result" {
 			resultEvent = event
 		}
 
@@ -110,14 +116,21 @@ func Execute(ctx context.Context, cfg *config.Config, accountName, prompt string
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		logger.Error("[executor] scanner error: %v", err)
+	}
+
 	waitErr := cmd.Wait()
 	exitCode := cmd.ProcessState.ExitCode()
+	logger.Debug("[executor] CLI exited code=%d", exitCode)
 
 	if waitErr != nil && resultEvent == nil {
 		if execCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("execution timeout after %s", cfg.Timeout)
 		}
-		return nil, fmt.Errorf("claude CLI exited with code %d: %s", exitCode, stderrBuf.String())
+		stderrStr := stderrBuf.String()
+		logger.Error("[executor] CLI failed: code=%d stderr=%s", exitCode, stderrStr)
+		return nil, fmt.Errorf("claude CLI exited with code %d: %s", exitCode, stderrStr)
 	}
 
 	return &Result{
